@@ -15,7 +15,7 @@ import os
 import time
 import warnings
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Optional
 
 # .env 파일 로드 (프로젝트 루트에서 찾기)
 try:
@@ -56,7 +56,7 @@ warnings.filterwarnings(
     module="langchain_community.vectorstores.pgvector",
 )
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_classic.chains import (
     create_history_aware_retriever,
@@ -65,11 +65,9 @@ from langchain_classic.chains import (
 from langchain_classic.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.vectorstores import PGVector
 from langchain_core.documents import Document
-from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import Runnable
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from pydantic import BaseModel
 
 # Neon PostgreSQL 연결 문자열 (.env 파일의 DATABASE_URL 사용)
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -117,6 +115,8 @@ openai_rag_chain: Optional[Runnable] = None
 local_rag_chain: Optional[Runnable] = None
 # 할당량 초과 추적
 openai_quota_exceeded = False
+# ChatService 인스턴스 (타입 힌트는 함수 내부에서 import)
+chat_service: Optional[Any] = None
 
 
 def wait_for_postgres(max_retries: int = 30, delay: int = 2) -> None:
@@ -245,7 +245,7 @@ def initialize_llm():
 
     # 로컬 Midm LLM 초기화
     try:
-        from app.model.midm import load_midm_model
+        from app.model.model_loader import load_midm_model
 
         # .env 파일에서 LOCAL_MODEL_DIR 읽기
         local_model_dir = os.getenv("LOCAL_MODEL_DIR")
@@ -593,6 +593,17 @@ def initialize_rag_chain():
 @app.on_event("startup")
 async def startup_event():
     """서버 시작 시 초기화."""
+    global \
+        chat_service, \
+        openai_embeddings, \
+        local_embeddings, \
+        openai_llm, \
+        local_llm, \
+        openai_rag_chain, \
+        local_rag_chain, \
+        openai_quota_exceeded, \
+        vector_store
+
     print("=" * 50)
     print("LangChain FastAPI 서버 시작 중...")
     print("=" * 50)
@@ -607,40 +618,52 @@ async def startup_event():
     print("\n1. Neon PostgreSQL 연결 확인 중...")
     wait_for_postgres()
 
+    # ChatService 초기화
+    print("\n2. ChatService 초기화 중...")
+    from app.service.chat_service_t import ChatService
+
+    chat_service = ChatService(
+        connection_string=CONNECTION_STRING,
+        collection_name=COLLECTION_NAME,
+        model_name_or_path=local_model_dir
+        if local_model_dir != "기본값 사용"
+        else None,
+    )
+
     # Embedding 모델 초기화
-    print("\n2. Embedding 모델 초기화 중...")
-    initialize_embeddings()
+    print("\n3. Embedding 모델 초기화 중...")
+    chat_service.initialize_embeddings()
 
     # LLM 모델 초기화
-    print("\n3. LLM 모델 초기화 중...")
-    initialize_llm()
+    print("\n4. LLM 모델 초기화 중...")
+    chat_service.initialize_llm()
 
-    # PGVector 스토어 초기화
-    print("\n4. PGVector 스토어 초기화 중...")
+    # PGVector 스토어 초기화 (기존 함수 사용)
+    print("\n5. PGVector 스토어 초기화 중...")
+    # ChatService의 embeddings를 전역 변수에 할당 (기존 코드 호환성)
+    openai_embeddings = chat_service.openai_embeddings
+    local_embeddings = chat_service.local_embeddings
+    openai_llm = chat_service.openai_llm
+    local_llm = chat_service.local_llm
+    openai_quota_exceeded = chat_service.openai_quota_exceeded
     initialize_vector_store()
 
     # RAG 체인 초기화
-    print("\n5. RAG 체인 초기화 중...")
-    initialize_rag_chain()
+    print("\n6. RAG 체인 초기화 중...")
+    chat_service.initialize_rag_chain()
+    # ChatService의 RAG 체인을 전역 변수에 할당 (기존 코드 호환성)
+    openai_rag_chain = chat_service.openai_rag_chain
+    local_rag_chain = chat_service.local_rag_chain
 
     print("\n" + "=" * 50)
     print("[OK] 서버 초기화 완료!")
     print("=" * 50)
 
 
-# 요청/응답 모델
-class ChatRequest(BaseModel):
-    """챗봇 요청 모델."""
+# 라우터 등록 (순환 import 방지를 위해 여기서 import)
+from app.router.chat_router import router as chat_router
 
-    message: str
-    history: Optional[List[dict]] = []
-    model_type: Optional[str] = "openai"  # "openai" 또는 "local"
-
-
-class ChatResponse(BaseModel):
-    """챗봇 응답 모델."""
-
-    response: str
+app.include_router(chat_router)
 
 
 @app.get("/")
@@ -668,149 +691,6 @@ async def health_check():
         "local_rag_chain": "initialized" if local_rag_chain else "not initialized",
         "openai_quota_exceeded": openai_quota_exceeded,
     }
-
-
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """챗봇 API 엔드포인트 - LangChain RAG 체인 사용."""
-    # 모델 타입에 따라 적절한 RAG 체인 선택
-    # 프론트엔드에서 전달된 model_type이 없으면 .env의 LLM_PROVIDER 사용
-    model_type = request.model_type or os.getenv("LLM_PROVIDER", "openai")
-    if model_type:
-        model_type = model_type.lower()
-
-    # 디버깅: 받은 model_type 로그 출력
-    print(
-        f"[DEBUG] 받은 model_type: {request.model_type}, 처리된 model_type: {model_type}"
-    )
-
-    # "midm"도 "local"로 처리
-    if model_type == "midm":
-        model_type = "local"
-
-    if model_type == "openai":
-        if not openai_rag_chain:
-            # 할당량 초과 여부 확인
-            global openai_quota_exceeded
-
-            if openai_quota_exceeded:
-                # 할당량 초과인 경우 명확한 메시지
-                error_msg = (
-                    "⚠️ OpenAI API 할당량이 초과되었습니다.\n\n"
-                    "서버 시작 시 '[WARNING] OpenAI API 할당량 초과' 메시지가 확인되었습니다.\n\n"
-                    "해결 방법:\n"
-                    "1. OpenAI 계정의 사용량 및 할당량을 확인하세요\n"
-                    "2. OpenAI 계정에 결제 정보를 추가하거나 할당량을 늘리세요\n"
-                    "3. 또는 '🖥️ 로컬 모델' 버튼을 선택하여 로컬 Midm 모델을 사용하세요"
-                )
-            elif not openai_llm and not openai_embeddings:
-                # 둘 다 초기화 실패 (할당량 초과가 아닌 경우)
-                error_msg = (
-                    "OpenAI 모델이 초기화되지 않았습니다.\n\n"
-                    "가능한 원인:\n"
-                    "1. OpenAI API 키가 설정되지 않았거나 잘못되었습니다\n"
-                    "2. 네트워크 연결 문제\n\n"
-                    "해결 방법:\n"
-                    "- .env 파일에 올바른 OPENAI_API_KEY를 설정하세요\n"
-                    "- 또는 '로컬 모델' 버튼을 선택하여 로컬 모델을 사용하세요"
-                )
-            else:
-                # 일부만 실패
-                error_details = []
-                if not openai_llm:
-                    error_details.append("OpenAI LLM이 초기화되지 않았습니다")
-                if not openai_embeddings:
-                    error_details.append("OpenAI Embeddings가 초기화되지 않았습니다")
-                error_msg = f"OpenAI RAG 체인 생성 실패: {', '.join(error_details)}"
-
-            print(f"[ERROR] OpenAI 모델 사용 시도 실패: {error_msg}")
-            raise HTTPException(
-                status_code=503,
-                detail=error_msg,
-            )
-        current_rag_chain = openai_rag_chain
-    elif model_type == "local" or model_type == "midm":
-        if not local_rag_chain:
-            raise HTTPException(
-                status_code=503,
-                detail="로컬 모델이 초기화되지 않았습니다. Midm 모델과 sentence-transformers를 확인해주세요.",
-            )
-        print(f"[DEBUG] 로컬 RAG 체인 사용 (model_type: {model_type})")
-        current_rag_chain = local_rag_chain
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"지원하지 않는 모델 타입입니다: {model_type}. 'openai' 또는 'local'을 사용해주세요.",
-        )
-
-    try:
-        # 대화 기록을 LangChain 메시지 형식으로 변환
-        chat_history = []
-        if request.history:
-            for msg in request.history:
-                if msg.get("role") == "user":
-                    chat_history.append(HumanMessage(content=msg.get("content", "")))
-                elif msg.get("role") == "assistant":
-                    chat_history.append(AIMessage(content=msg.get("content", "")))
-
-        # RAG 체인 실행
-        result = current_rag_chain.invoke(
-            {
-                "input": request.message,
-                "chat_history": chat_history,
-            }
-        )
-
-        # 체인 결과에서 답변 추출
-        response_text = result.get("answer", "답변을 생성할 수 없습니다.")
-
-        # response_text가 None이거나 문자열이 아닌 경우 처리
-        if response_text is None:
-            response_text = "답변을 생성할 수 없습니다."
-        else:
-            response_text = str(response_text)
-
-        # 응답에서 이전 대화 내용 제거 (중복 방지)
-        # Midm 모델에서 이미 정리했으므로 간단한 체크만 수행
-        if response_text and (
-            "Human:" in response_text or "Assistant:" in response_text
-        ):
-            import re
-
-            # 빠른 정규식으로 마지막 Assistant: 이후만 추출
-            assistant_match = re.search(
-                r"Assistant:\s*(.+?)(?:\nHuman:|$)", response_text, re.DOTALL
-            )
-            if assistant_match:
-                response_text = assistant_match.group(1).strip()
-
-        # 빈 응답 방지
-        if not response_text or not response_text.strip():
-            response_text = "답변을 생성할 수 없습니다."
-
-        return ChatResponse(response=response_text)
-
-    except Exception as e:
-        error_msg = str(e)
-        print(f"[ERROR] 챗봇 응답 생성 실패: {error_msg}")
-
-        # OpenAI API 호출량 초과 에러 확인
-        if (
-            "quota" in error_msg.lower()
-            or "429" in error_msg
-            or "insufficient_quota" in error_msg
-            or "exceeded" in error_msg.lower()
-        ):
-            error_detail = "OpenAI API 호출량이 초과되었습니다. 할당량을 확인하고 다시 시도해주세요."
-            raise HTTPException(
-                status_code=429,
-                detail=error_detail,
-            )
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"응답 생성 중 오류가 발생했습니다: {error_msg[:200]}",
-            )
 
 
 if __name__ == "__main__":
