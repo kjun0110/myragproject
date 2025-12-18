@@ -1,23 +1,66 @@
-__pycache__
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.egg-info
-dist
-build
+# Git
 .git
 .gitignore
-.vscode
-.idea
-*.md
-!README.md
-libs/
-tests/
-.github/
-uv.lock
-pyproject.toml
-Makefile
+.github
 
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 환경
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.env
+*.pem
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 프로젝트 특정
+frontend/
+libs/
+node_modules/
+*.md
+LICENSE
+CITATION.cff
+
+# 테스트 및 체크 스크립트
+check_*.py
+
+# 로그
+*.log
+
+# 임시 파일
+*.tmp
+*.temp

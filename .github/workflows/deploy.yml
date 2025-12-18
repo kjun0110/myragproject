@@ -1,0 +1,85 @@
+name: Deploy to EC2
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+
+            - name: Setup SSH
+              uses: webfactory/ssh-agent@v0.8.0
+              with:
+                  ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+            - name: Add EC2 to known hosts
+              run: |
+                  ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+            - name: Create .env file content
+              run: |
+                  cat > .env.tmp << 'EOF'
+                  DATABASE_URL=${{ secrets.DATABASE_URL }}
+                  OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+                  LOCAL_MODEL_DIR=${{ secrets.LOCAL_MODEL_DIR }}
+                  LLM_PROVIDER=openai
+                  MODE=api
+                  HOST=0.0.0.0
+                  PORT=8000
+                  EOF
+
+            - name: Deploy to EC2
+              env:
+                  EC2_HOST: ${{ secrets.EC2_HOST }}
+                  EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+              run: |
+                  echo "🚀 Starting deployment to EC2..."
+
+                  # 프로젝트 디렉토리 생성
+                  ssh $EC2_USERNAME@$EC2_HOST "mkdir -p ~/app"
+
+                  # 파일 전송 (rsync)
+                  echo "📦 Transferring files..."
+                  rsync -avz --delete \
+                    --exclude='.git' \
+                    --exclude='__pycache__' \
+                    --exclude='*.pyc' \
+                    --exclude='.env' \
+                    --exclude='node_modules' \
+                    --exclude='frontend' \
+                    --exclude='libs' \
+                    --exclude='*.md' \
+                    --exclude='.gitignore' \
+                    --exclude='.github' \
+                    ./ $EC2_USERNAME@$EC2_HOST:~/app/
+
+                  # .env 파일 전송
+                  echo "🔐 Transferring environment variables..."
+                  scp .env.tmp $EC2_USERNAME@$EC2_HOST:~/app/.env
+
+                  # 배포 스크립트 실행 권한 부여 및 실행
+                  echo "🔧 Running deployment script..."
+                  ssh $EC2_USERNAME@$EC2_HOST "cd ~/app && chmod +x deploy.sh && ./deploy.sh"
+
+                  echo "✅ Deployment completed!"
+
+            - name: Health Check
+              env:
+                  EC2_HOST: ${{ secrets.EC2_HOST }}
+                  EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+              run: |
+                  echo "🏥 Running health check..."
+                  sleep 15
+                  ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health || exit 1"
+                  echo "✅ Health check passed!"
+
+            - name: Cleanup
+              if: always()
+              run: |
+                  rm -f .env.tmp
