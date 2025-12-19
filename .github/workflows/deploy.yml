@@ -1,85 +1,99 @@
 name: Deploy to EC2
 
 on:
-    push:
-        branches: [main]
-    workflow_dispatch:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
-    deploy:
-        runs-on: ubuntu-latest
+  deploy:
+    runs-on: ubuntu-latest
 
-        steps:
-            - name: Checkout code
-              uses: actions/checkout@v4
+    steps:
+      # GitHub 레포지토리 전체 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-            - name: Setup SSH
-              uses: webfactory/ssh-agent@v0.8.0
-              with:
-                  ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+      # SSH 키 설정 (EC2 접속용)
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.8.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
 
-            - name: Add EC2 to known hosts
-              run: |
-                  ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+      # EC2 호스트를 known_hosts에 추가 (SSH 연결 시 호스트 검증)
+      - name: Add EC2 to known hosts
+        run: |
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-            - name: Create .env file content
-              run: |
-                  cat > .env.tmp << 'EOF'
-                  DATABASE_URL=${{ secrets.DATABASE_URL }}
-                  OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
-                  LOCAL_MODEL_DIR=${{ secrets.LOCAL_MODEL_DIR }}
-                  LLM_PROVIDER=openai
-                  MODE=api
-                  HOST=0.0.0.0
-                  PORT=8000
-                  EOF
+      # api/app 폴더를 EC2의 /home/ubuntu/app으로 배포
+      - name: Deploy to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "🚀 Starting deployment to EC2..."
 
-            - name: Deploy to EC2
-              env:
-                  EC2_HOST: ${{ secrets.EC2_HOST }}
-                  EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-              run: |
-                  echo "🚀 Starting deployment to EC2..."
+          # app 디렉토리 생성 (없으면 자동 생성)
+          ssh $EC2_USERNAME@$EC2_HOST "mkdir -p ~/app"
 
-                  # 프로젝트 디렉토리 생성
-                  ssh $EC2_USERNAME@$EC2_HOST "mkdir -p ~/app"
+          # api/app 폴더만 EC2의 /home/ubuntu/app으로 rsync 전송
+          echo "📦 Transferring api/app files to EC2..."
+          rsync -avz --delete \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.git' \
+            api/app/ $EC2_USERNAME@$EC2_HOST:~/app/
 
-                  # 파일 전송 (rsync)
-                  echo "📦 Transferring files..."
-                  rsync -avz --delete \
-                    --exclude='.git' \
-                    --exclude='__pycache__' \
-                    --exclude='*.pyc' \
-                    --exclude='.env' \
-                    --exclude='node_modules' \
-                    --exclude='frontend' \
-                    --exclude='libs' \
-                    --exclude='*.md' \
-                    --exclude='.gitignore' \
-                    --exclude='.github' \
-                    ./ $EC2_USERNAME@$EC2_HOST:~/app/
+          echo "✅ File transfer completed!"
 
-                  # .env 파일 전송
-                  echo "🔐 Transferring environment variables..."
-                  scp .env.tmp $EC2_USERNAME@$EC2_HOST:~/app/.env
+      # 가상환경 생성 및 패키지 설치, 애플리케이션 실행
+      - name: Setup virtual environment and run application
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "🔧 Setting up virtual environment and starting application..."
 
-                  # 배포 스크립트 실행 권한 부여 및 실행
-                  echo "🔧 Running deployment script..."
-                  ssh $EC2_USERNAME@$EC2_HOST "cd ~/app && chmod +x deploy.sh && ./deploy.sh"
+          # 가상환경 생성 (없으면), 패키지 설치, 애플리케이션 실행
+          ssh $EC2_USERNAME@$EC2_HOST << 'ENDSSH'
+            cd /home/ubuntu
 
-                  echo "✅ Deployment completed!"
+            # venv가 없으면 생성
+            if [ ! -d "venv" ]; then
+              echo "📦 Creating virtual environment..."
+              python3 -m venv venv
+            else
+              echo "✅ Virtual environment already exists"
+            fi
 
-            - name: Health Check
-              env:
-                  EC2_HOST: ${{ secrets.EC2_HOST }}
-                  EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-              run: |
-                  echo "🏥 Running health check..."
-                  sleep 15
-                  ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health || exit 1"
-                  echo "✅ Health check passed!"
+            # 가상환경 활성화 및 패키지 설치
+            echo "📥 Installing/upgrading packages..."
+            source venv/bin/activate
+            pip install -r requirements.txt --upgrade
 
-            - name: Cleanup
-              if: always()
-              run: |
-                  rm -f .env.tmp
+            # 기존 프로세스 종료 (이미 실행 중인 경우)
+            echo "🛑 Stopping existing application..."
+            pkill -f "python.*main.py" || true
+            sleep 2
+
+            # 애플리케이션 실행 (백그라운드)
+            echo "🚀 Starting application..."
+            cd app
+            nohup python main.py > ../app.log 2>&1 &
+            echo $! > ../app.pid
+
+            echo "✅ Application started (PID: $(cat ../app.pid))"
+          ENDSSH
+
+          echo "✅ Deployment completed!"
+
+      # 헬스 체크 (애플리케이션 정상 실행 확인)
+      - name: Health Check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
+        run: |
+          echo "🏥 Running health check..."
+          sleep 10
+          ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health || exit 1"
+          echo "✅ Health check passed!"
