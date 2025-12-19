@@ -58,19 +58,31 @@ jobs:
             fi
 
             echo "📥 Installing/upgrading packages..."
-            source venv/bin/activate
-            pip install -r requirements.txt --upgrade
+            /home/ubuntu/venv/bin/pip install --upgrade pip
+            /home/ubuntu/venv/bin/pip install -r /home/ubuntu/requirements.txt --upgrade
 
             echo "🛑 Stopping existing application..."
             pkill -f "python.*main.py" || true
+            pkill -f "/home/ubuntu/venv/bin/python.*main.py" || true
             sleep 2
 
             echo "🚀 Starting application..."
-            cd app
-            HOST=0.0.0.0 PORT=8000 MODE=api nohup python main.py > ../app.log 2>&1 &
-            echo $! > ../app.pid
+            cd /home/ubuntu/app
+            HOST=0.0.0.0 PORT=8000 MODE=api nohup /home/ubuntu/venv/bin/python main.py > /home/ubuntu/app.log 2>&1 &
+            APP_PID=$!
+            echo $APP_PID > /home/ubuntu/app.pid
 
-            echo "✅ Application started (PID: $(cat ../app.pid))"
+            sleep 3
+            if ps -p $APP_PID > /dev/null 2>&1; then
+              echo "✅ Application started (PID: $APP_PID)"
+              echo "📋 Checking port 8000..."
+              sleep 2
+              netstat -tlnp 2>/dev/null | grep :8000 || ss -tlnp 2>/dev/null | grep :8000 || echo "⚠️ Port 8000 not yet listening"
+            else
+              echo "❌ Application failed to start. Checking logs..."
+              tail -50 /home/ubuntu/app.log || echo "No log file found"
+              exit 1
+            fi
           ENDSSH
 
           echo "✅ Deployment completed!"
@@ -81,6 +93,42 @@ jobs:
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
           echo "🏥 Running health check..."
-          sleep 10
-          ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health || exit 1"
-          echo "✅ Health check passed!"
+          MAX_RETRIES=15
+          RETRY_INTERVAL=3
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "⏳ Attempt $i/$MAX_RETRIES..."
+
+            # 프로세스 확인
+            if ssh $EC2_USERNAME@$EC2_HOST "ps -p \$(cat /home/ubuntu/app.pid 2>/dev/null) > /dev/null 2>&1"; then
+              # Health check
+              if ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health > /dev/null 2>&1"; then
+                echo "✅ Health check passed!"
+                exit 0
+              else
+                echo "⚠️ Health check failed, but process is running. Retrying..."
+              fi
+            else
+              echo "❌ Application process not found. Checking logs..."
+              ssh $EC2_USERNAME@$EC2_HOST "tail -50 /home/ubuntu/app.log 2>/dev/null || echo 'No log file'"
+              echo "Retrying in ${RETRY_INTERVAL}s..."
+            fi
+
+            if [ $i -lt $MAX_RETRIES ]; then
+              sleep $RETRY_INTERVAL
+            fi
+          done
+
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          echo "📋 Final status check..."
+          ssh $EC2_USERNAME@$EC2_HOST << 'ENDSSH'
+            echo "--- Process Status ---"
+            ps aux | grep -E "python.*main.py" | grep -v grep || echo "No process found"
+            echo ""
+            echo "--- Application Logs (last 100 lines) ---"
+            tail -100 /home/ubuntu/app.log 2>/dev/null || echo "No log file found"
+            echo ""
+            echo "--- Port 8000 Status ---"
+            netstat -tlnp 2>/dev/null | grep :8000 || ss -tlnp 2>/dev/null | grep :8000 || echo "Port 8000 not listening"
+          ENDSSH
+          exit 1
