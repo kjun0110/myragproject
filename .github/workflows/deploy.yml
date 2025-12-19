@@ -56,33 +56,45 @@ jobs:
 
           # 가상환경 생성 (없으면), 패키지 설치, 애플리케이션 실행
           ssh $EC2_USERNAME@$EC2_HOST << 'ENDSSH'
+            set -e  # 오류 발생 시 스크립트 중단
             cd /home/ubuntu
 
-            # venv가 없으면 생성
+            # venv가 없으면 생성 (python3 명시적 사용)
             if [ ! -d "venv" ]; then
-              echo "📦 Creating virtual environment..."
+              echo "📦 Creating virtual environment with python3..."
               python3 -m venv venv
             else
               echo "✅ Virtual environment already exists"
             fi
 
-            # 가상환경 활성화 및 패키지 설치
+            # 가상환경의 pip를 직접 사용하여 패키지 설치 (활성화 없이)
             echo "📥 Installing/upgrading packages..."
-            source venv/bin/activate
-            pip install -r requirements.txt --upgrade
+            /home/ubuntu/venv/bin/pip install --upgrade pip
+            /home/ubuntu/venv/bin/pip install -r /home/ubuntu/requirements.txt --upgrade
 
-            # 기존 main.py 프로세스 종료 (이미 실행 중인 경우)
+            # 기존 main.py 프로세스 종료 (python3와 가상환경 python 모두 확인)
             echo "🛑 Stopping existing application..."
             pkill -f "python.*main.py" || true
-            sleep 2
+            pkill -f "python3.*main.py" || true
+            pkill -f "/home/ubuntu/venv/bin/python.*main.py" || true
+            sleep 3
 
-            # 애플리케이션 실행 (백그라운드, HOST=0.0.0.0으로 외부 접근 가능)
+            # 애플리케이션 실행 (가상환경의 python 직접 사용, 절대 경로로 로그 저장)
             echo "🚀 Starting application..."
-            cd app
-            HOST=0.0.0.0 PORT=8000 MODE=api nohup python main.py > ../app.log 2>&1 &
-            echo $! > ../app.pid
+            cd /home/ubuntu/app
+            HOST=0.0.0.0 PORT=8000 MODE=api nohup /home/ubuntu/venv/bin/python main.py > /home/ubuntu/app.log 2>&1 &
+            APP_PID=$!
+            echo $APP_PID > /home/ubuntu/app.pid
 
-            echo "✅ Application started (PID: $(cat ../app.pid))"
+            # 프로세스가 실제로 실행 중인지 확인
+            sleep 2
+            if ps -p $APP_PID > /dev/null 2>&1; then
+              echo "✅ Application started successfully (PID: $APP_PID)"
+            else
+              echo "❌ Application failed to start. Checking logs..."
+              tail -50 /home/ubuntu/app.log || echo "No log file found"
+              exit 1
+            fi
           ENDSSH
 
           echo "✅ Deployment completed!"
@@ -98,8 +110,13 @@ jobs:
           RETRY_INTERVAL=3
           RETRY_COUNT=0
 
+          # 초기 대기 시간 (애플리케이션 시작 시간 확보)
+          echo "⏳ Waiting for application to start..."
+          sleep 5
+
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-            if ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health > /dev/null 2>&1"; then
+            # curl이 설치되어 있는지 확인하고, 없으면 wget 사용
+            if ssh $EC2_USERNAME@$EC2_HOST "command -v curl > /dev/null 2>&1 && curl -f http://localhost:8000/health > /dev/null 2>&1 || command -v wget > /dev/null 2>&1 && wget -q --spider http://localhost:8000/health > /dev/null 2>&1"; then
               echo "✅ Health check passed!"
               exit 0
             else
@@ -112,6 +129,15 @@ jobs:
           done
 
           echo "❌ Health check failed after $MAX_RETRIES attempts"
-          echo "📋 Application logs:"
-          ssh $EC2_USERNAME@$EC2_HOST "tail -50 /home/ubuntu/app.log || echo 'No log file found'"
+          echo "📋 Checking application status..."
+          ssh $EC2_USERNAME@$EC2_HOST << 'ENDSSH'
+            echo "--- Process Status ---"
+            ps aux | grep -E "python.*main.py|uvicorn" | grep -v grep || echo "No application process found"
+            echo ""
+            echo "--- Application Logs (last 50 lines) ---"
+            tail -50 /home/ubuntu/app.log 2>/dev/null || echo "No log file found at /home/ubuntu/app.log"
+            echo ""
+            echo "--- Port 8000 Status ---"
+            netstat -tlnp 2>/dev/null | grep :8000 || ss -tlnp 2>/dev/null | grep :8000 || echo "Port 8000 not listening"
+          ENDSSH
           exit 1
