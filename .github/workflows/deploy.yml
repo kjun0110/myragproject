@@ -71,15 +71,15 @@ jobs:
             source venv/bin/activate
             pip install -r requirements.txt --upgrade
 
-            # 기존 프로세스 종료 (이미 실행 중인 경우)
+            # 기존 main.py 프로세스 종료 (이미 실행 중인 경우)
             echo "🛑 Stopping existing application..."
             pkill -f "python.*main.py" || true
             sleep 2
 
-            # 애플리케이션 실행 (백그라운드)
+            # 애플리케이션 실행 (백그라운드, HOST=0.0.0.0으로 외부 접근 가능)
             echo "🚀 Starting application..."
             cd app
-            nohup python main.py > ../app.log 2>&1 &
+            HOST=0.0.0.0 PORT=8000 MODE=api nohup python main.py > ../app.log 2>&1 &
             echo $! > ../app.pid
 
             echo "✅ Application started (PID: $(cat ../app.pid))"
@@ -87,13 +87,31 @@ jobs:
 
           echo "✅ Deployment completed!"
 
-      # 헬스 체크 (애플리케이션 정상 실행 확인)
+      # 헬스 체크 (애플리케이션 정상 실행 확인, 재시도 10회, 3초 간격)
       - name: Health Check
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
         run: |
           echo "🏥 Running health check..."
-          sleep 10
-          ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health || exit 1"
-          echo "✅ Health check passed!"
+          MAX_RETRIES=10
+          RETRY_INTERVAL=3
+          RETRY_COUNT=0
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if ssh $EC2_USERNAME@$EC2_HOST "curl -f http://localhost:8000/health > /dev/null 2>&1"; then
+              echo "✅ Health check passed!"
+              exit 0
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⏳ Health check failed. Retry $RETRY_COUNT/$MAX_RETRIES (waiting ${RETRY_INTERVAL}s)..."
+                sleep $RETRY_INTERVAL
+              fi
+            fi
+          done
+
+          echo "❌ Health check failed after $MAX_RETRIES attempts"
+          echo "📋 Application logs:"
+          ssh $EC2_USERNAME@$EC2_HOST "tail -50 /home/ubuntu/app.log || echo 'No log file found'"
+          exit 1
