@@ -131,10 +131,15 @@ class ChatService:
             self.local_embeddings = None
 
         if not self.openai_embeddings and not self.local_embeddings:
-            raise RuntimeError(
-                "OpenAI와 로컬 Embedding 모델 모두 초기화에 실패했습니다. "
-                "OpenAI API 키를 설정하거나 sentence-transformers를 설치해주세요."
+            print("[WARNING] OpenAI와 로컬 Embedding 모델 모두 초기화에 실패했습니다.")
+            print(
+                "[INFO] 서버는 시작되지만, Embedding 기능을 사용하려면 최소 하나의 Embedding 모델이 필요합니다."
             )
+            print(
+                "[INFO] OpenAI API 키를 설정하거나 sentence-transformers를 설치해주세요."
+            )
+            # RuntimeError를 발생시키지 않고 경고만 출력
+            # 서버는 시작되지만 Embedding 기능은 사용할 수 없음
 
     def initialize_llm(self) -> None:
         """LLM 모델 초기화 - OpenAI와 로컬 모델 모두 초기화."""
@@ -169,7 +174,23 @@ class ChatService:
 
         # 로컬 Midm LLM 초기화
         try:
-            from app.model.model_loader import load_midm_model
+            # 모듈 import 시도
+            try:
+                from app.model.model_loader import load_midm_model
+            except ModuleNotFoundError as import_error:
+                print(
+                    f"[WARNING] app.model.model_loader 모듈을 찾을 수 없습니다: {str(import_error)}"
+                )
+                print("   로컬 LLM 모델 기능을 사용할 수 없습니다.")
+                self.local_llm = None
+                # import 실패 시 더 이상 진행하지 않음
+                if not self.openai_llm:
+                    print(
+                        "[INFO] LLM 모델이 없어도 서버는 시작됩니다. "
+                        "단, RAG 기능을 사용하려면 최소 하나의 LLM 모델이 필요합니다."
+                    )
+                    return
+                return
 
             # GPU 메모리 정리
             if torch.cuda.is_available():
@@ -200,11 +221,15 @@ class ChatService:
             print(f"[DEBUG] 상세 오류: {traceback.format_exc()[:500]}")
             self.local_llm = None
 
+        # LLM이 없어도 서버는 시작되도록 함 (RAG 기능은 사용 불가)
         if not self.openai_llm and not self.local_llm:
-            raise RuntimeError(
-                "OpenAI와 로컬 LLM 모델 모두 초기화에 실패했습니다. "
-                "OpenAI API 키를 설정하거나 Midm 모델을 확인해주세요."
+            print("[WARNING] OpenAI와 로컬 LLM 모델 모두 초기화에 실패했습니다.")
+            print(
+                "[INFO] 서버는 시작되지만, RAG 기능을 사용하려면 최소 하나의 LLM 모델이 필요합니다."
             )
+            print("[INFO] OpenAI API 키를 설정하거나 로컬 Midm 모델을 확인해주세요.")
+            # RuntimeError를 발생시키지 않고 경고만 출력
+            # 서버는 시작되지만 RAG 체인은 초기화되지 않음
 
     def create_rag_chain(self, llm_model: Any, embeddings_model: Any) -> Runnable:
         """RAG 체인 생성 - LangChain 체인 기능 활용.
@@ -301,8 +326,12 @@ class ChatService:
         if not self.openai_rag_chain and not self.local_rag_chain:
             error_msg = "OpenAI와 로컬 RAG 체인 모두 초기화에 실패했습니다.\n"
             error_msg += "최소 하나의 LLM과 Embedding 모델이 필요합니다."
-            print(f"[ERROR] {error_msg}")
-            raise RuntimeError(error_msg)
+            print(f"[WARNING] {error_msg}")
+            print(
+                "[INFO] 서버는 시작되지만, RAG 기능을 사용하려면 최소 하나의 LLM 모델이 필요합니다."
+            )
+            # RuntimeError를 발생시키지 않고 경고만 출력
+            # 서버는 시작되지만 RAG 체인은 사용할 수 없음
 
     def chat_with_rag(
         self,

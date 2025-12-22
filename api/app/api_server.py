@@ -299,7 +299,12 @@ def initialize_vector_store():
         current_embeddings = local_embeddings
         print("[INFO] 로컬 Embedding 모델 사용 (fallback)")
     else:
-        raise RuntimeError("사용 가능한 Embedding 모델이 없습니다.")
+        print("[WARNING] 사용 가능한 Embedding 모델이 없습니다.")
+        print(
+            "[INFO] 서버는 시작되지만, 벡터 스토어 기능을 사용하려면 최소 하나의 Embedding 모델이 필요합니다."
+        )
+        vector_store = None
+        return
 
     try:
         print("[INFO] ===== PGVector 연결 확인 시작 =====")
