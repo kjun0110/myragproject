@@ -119,7 +119,7 @@ async def chat(request: ChatRequest, http_request: Request):
                 "3. 또는 '🖥️ 로컬 모델' 버튼을 선택하여 로컬 Midm 모델을 사용하세요"
             )
             raise HTTPException(
-                status_code=503,
+                status_code=429,
                 detail=error_detail,
             )
         else:
