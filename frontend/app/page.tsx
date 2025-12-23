@@ -14,7 +14,7 @@ interface Message {
 type ModelType = "openai" | "local";
 
 export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState<Message[]>(() => [
     {
       id: "1",
       role: "assistant",
@@ -26,28 +26,6 @@ export default function Home() {
   const [modelType, setModelType] = useState<ModelType>("openai");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // localhost 여부 확인 함수
-  const checkIsLocalhost = (): boolean => {
-    if (typeof window === "undefined") return false;
-    return (
-      window.location.hostname === "localhost" ||
-      window.location.hostname === "127.0.0.1" ||
-      window.location.hostname === ""
-    );
-  };
-
-  // 컴포넌트 마운트 시 localhost 여부 확인하고 모델 타입 자동 설정
-  useEffect(() => {
-    const isLocalhost = checkIsLocalhost();
-    if (isLocalhost) {
-      setModelType("local");
-      console.log("[DEBUG] localhost 감지, 로컬 모델로 자동 설정");
-    } else {
-      setModelType("openai");
-      console.log("[DEBUG] 외부 접속 감지, OpenAI 모델로 자동 설정");
-    }
-  }, []);
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -58,34 +36,6 @@ export default function Home() {
 
   const handleSendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
-
-    // localhost 여부 동적으로 확인
-    const isLocalhost = checkIsLocalhost();
-
-    // 모델 타입과 환경 불일치 검증
-    if (isLocalhost && modelType === "openai") {
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: "⚠️ 현재 로컬환경입니다. 로컬 모델을 사용해주세요.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-      setIsLoading(false);
-      return;
-    }
-
-    if (!isLocalhost && modelType === "local") {
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: "⚠️ 현재 로컬 환경이 아닙니다. OpenAI 모델을 사용해주세요.",
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-      setIsLoading(false);
-      return;
-    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -100,8 +50,6 @@ export default function Home() {
     try {
       // 디버깅: 전송하는 model_type 확인
       console.log("[DEBUG] 전송하는 model_type:", modelType);
-      console.log("[DEBUG] isLocalhost:", isLocalhost);
-      console.log("[DEBUG] hostname:", typeof window !== "undefined" ? window.location.hostname : "N/A");
 
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -120,7 +68,33 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || errorData.message || "응답을 받는 중 오류가 발생했습니다.";
+        const errorMsg = errorData.error || errorData.detail || errorData.message || "응답을 받는 중 오류가 발생했습니다.";
+
+        // 백엔드 환경 불일치 에러 (400)
+        if (response.status === 400) {
+          // 백엔드가 로컬일 때 OpenAI 선택
+          if (errorMsg.includes("로컬환경") && modelType === "openai") {
+            const errorMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: "ℹ️ 현재 로컬 환경입니다.",
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+            return;
+          }
+          // 백엔드가 클라우드일 때 로컬 모델 선택
+          if (errorMsg.includes("로컬 환경이 아닙니다") && modelType === "local") {
+            const errorMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: "ℹ️ 현재 EC2 환경입니다.",
+              timestamp: new Date(),
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+            return;
+          }
+        }
 
         // OpenAI 호출량 초과 에러
         if (response.status === 429) {

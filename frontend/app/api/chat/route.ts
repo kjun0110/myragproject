@@ -14,10 +14,10 @@ export async function POST(request: NextRequest) {
 
     // LangChain 백엔드 API 호출
     // docker-compose의 langchain-app 서비스와 통신
-    const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
-
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
     try {
-      // 디버깅: 받은 model_type 확인
+      // 디버깅: 백엔드 URL과 model_type 확인
+      console.log("[DEBUG] 백엔드 URL:", backendUrl);
       console.log("[DEBUG] Next.js API route에서 받은 model_type:", model_type);
 
       const response = await fetch(`${backendUrl}/api/chat`, {
@@ -47,10 +47,11 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // 기타 백엔드 오류
+        // 기타 백엔드 오류 (400 포함)
         return NextResponse.json(
           {
             error: errorMessage || "백엔드 서버 오류가 발생했습니다.",
+            detail: errorData.detail || errorMessage, // detail 필드도 함께 전달
             status: response.status,
           },
           { status: response.status }
