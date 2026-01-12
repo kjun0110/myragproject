@@ -660,6 +660,15 @@ async def startup_event():
     openai_rag_chain = chat_service.openai_rag_chain
     local_rag_chain = chat_service.local_rag_chain
 
+    # Exaone 모델 사전 로드 (LangGraph용)
+    print("\n7. Exaone3.5 모델 사전 로드 중...")
+    try:
+        from app.graph import preload_exaone_model
+        preload_exaone_model()
+    except Exception as e:
+        print(f"[WARNING] Exaone 모델 사전 로드 실패: {str(e)}")
+        print("[INFO] 첫 요청 시 로드됩니다 (시간이 오래 걸릴 수 있습니다).")
+
     print("\n" + "=" * 50)
     print("[OK] 서버 초기화 완료!")
     print("=" * 50)
@@ -667,8 +676,10 @@ async def startup_event():
 
 # 라우터 등록 (순환 import 방지를 위해 여기서 import)
 from app.router.chat_router import router as chat_router
+from app.router.graph_router import router as graph_router
 
 app.include_router(chat_router)
+app.include_router(graph_router)
 
 
 @app.get("/")

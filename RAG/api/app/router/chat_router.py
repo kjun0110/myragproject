@@ -2,7 +2,7 @@
 FastAPI 기준의 API 엔드포인트 계층입니다.
 
 chat_router.py
-POST /api/chat
+POST /api/chain
 세션 ID, 메시지 리스트 등을 받아 대화형 응답 반환.
 """
 
@@ -51,7 +51,7 @@ def get_chat_service():
     return api_server.chat_service
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chain", response_model=ChatResponse)
 async def chat(request: ChatRequest, http_request: Request):
     """챗봇 API 엔드포인트 - ChatService를 사용한 RAG 체인."""
     # ChatService 인스턴스 가져오기
@@ -105,29 +105,6 @@ async def chat(request: ChatRequest, http_request: Request):
 
         return ChatResponse(response=response_text)
 
-    except RuntimeError as e:
-        error_msg = str(e)
-        print(f"[ERROR] 챗봇 응답 생성 실패: {error_msg}")
-
-        # OpenAI API 할당량 초과 에러 확인
-        if "할당량" in error_msg or "quota" in error_msg.lower():
-            error_detail = (
-                "⚠️ OpenAI API 할당량이 초과되었습니다.\n\n"
-                "해결 방법:\n"
-                "1. OpenAI 계정의 사용량 및 할당량을 확인하세요\n"
-                "2. OpenAI 계정에 결제 정보를 추가하거나 할당량을 늘리세요\n"
-                "3. 또는 '🖥️ 로컬 모델' 버튼을 선택하여 로컬 Midm 모델을 사용하세요"
-            )
-            raise HTTPException(
-                status_code=429,
-                detail=error_detail,
-            )
-        else:
-            raise HTTPException(
-                status_code=503,
-                detail=error_msg,
-            )
-
     except ValueError as e:
         error_msg = str(e)
         print(f"[ERROR] 잘못된 요청: {error_msg}")
@@ -140,20 +117,29 @@ async def chat(request: ChatRequest, http_request: Request):
         error_msg = str(e)
         print(f"[ERROR] 챗봇 응답 생성 실패: {error_msg}")
 
-        # OpenAI API 호출량 초과 에러 확인
+        # OpenAI API 할당량 초과 에러 확인 (1번만 체크)
         if (
-            "quota" in error_msg.lower()
+            "할당량" in error_msg
+            or "quota" in error_msg.lower()
             or "429" in error_msg
             or "insufficient_quota" in error_msg
             or "exceeded" in error_msg.lower()
         ):
-            error_detail = "OpenAI API 호출량이 초과되었습니다. 할당량을 확인하고 다시 시도해주세요."
+            error_detail = (
+                "⚠️ OpenAI API 할당량이 초과되었습니다.\n\n"
+                "해결 방법:\n"
+                "1. OpenAI 계정의 사용량 및 할당량을 확인하세요\n"
+                "2. OpenAI 계정에 결제 정보를 추가하거나 할당량을 늘리세요\n"
+                "3. 또는 '🖥️ 로컬 모델' 버튼을 선택하여 로컬 Midm 모델을 사용하세요"
+            )
             raise HTTPException(
                 status_code=429,
                 detail=error_detail,
             )
         else:
+            # RuntimeError는 503, 기타는 500
+            status_code = 503 if isinstance(e, RuntimeError) else 500
             raise HTTPException(
-                status_code=500,
+                status_code=status_code,
                 detail=f"응답 생성 중 오류가 발생했습니다: {error_msg[:200]}",
             )

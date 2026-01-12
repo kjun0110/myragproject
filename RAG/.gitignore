@@ -60,6 +60,7 @@ build/
 
 # Python model files
 api/app/model/
+api/app/model/exaone3.5
 
 # LangChain library (if not needed in repo)
 libs/langchain/

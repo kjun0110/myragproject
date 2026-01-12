@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       console.log("[DEBUG] 백엔드 URL:", backendUrl);
       console.log("[DEBUG] Next.js API route에서 받은 model_type:", model_type);
 
-      const response = await fetch(`${backendUrl}/api/chat`, {
+      const response = await fetch(`${backendUrl}/api/chain`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

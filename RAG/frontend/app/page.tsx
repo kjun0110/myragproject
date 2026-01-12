@@ -11,7 +11,7 @@ interface Message {
   timestamp: Date;
 }
 
-type ModelType = "openai" | "local";
+type ModelType = "openai" | "local" | "graph";
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>(() => [
@@ -51,20 +51,50 @@ export default function Home() {
       // 디버깅: 전송하는 model_type 확인
       console.log("[DEBUG] 전송하는 model_type:", modelType);
 
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      // graph 타입이면 /api/graph 엔드포인트 사용
+      const apiEndpoint = modelType === "graph" ? "/api/graph" : "/api/chat";
+      const requestBody = modelType === "graph"
+        ? {
+          message: content,
+          history: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        }
+        : {
           message: content,
           history: messages.map((m) => ({
             role: m.role,
             content: m.content,
           })),
           model_type: modelType, // "openai" 또는 "local"
-        }),
-      });
+        };
+
+      // 타임아웃 설정 (로컬 모델은 더 오래 걸릴 수 있으므로 120초)
+      const timeout = modelType === "graph" || modelType === "local" ? 120000 : 30000;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      let response: Response;
+      try {
+        response = await fetch(apiEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError instanceof Error && fetchError.name === "AbortError") {
+          throw new Error(
+            `요청 시간이 초과되었습니다 (${timeout / 1000}초). 모델이 로딩 중이거나 응답 생성에 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해주세요.`
+          );
+        }
+        throw fetchError;
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -84,7 +114,7 @@ export default function Home() {
             return;
           }
           // 백엔드가 클라우드일 때 로컬 모델 선택
-          if (errorMsg.includes("로컬 환경이 아닙니다") && modelType === "local") {
+          if (errorMsg.includes("로컬 환경이 아닙니다") && (modelType === "local" || modelType === "graph")) {
             const errorMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: "assistant",
@@ -146,10 +176,23 @@ export default function Home() {
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
+      console.error("[ERROR] 메시지 전송 실패:", error);
+      let errorContent = "알 수 없는 오류가 발생했습니다.";
+
+      if (error instanceof Error) {
+        if (error.message.includes("시간이 초과")) {
+          errorContent = error.message;
+        } else if (error.message.includes("Failed to fetch") || error.message.includes("fetch")) {
+          errorContent = "⚠️ 백엔드 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.";
+        } else {
+          errorContent = `⚠️ 오류가 발생했습니다: ${error.message}`;
+        }
+      }
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: `⚠️ 오류가 발생했습니다: ${error instanceof Error ? error.message : "알 수 없는 오류"}`,
+        content: errorContent,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -176,7 +219,14 @@ export default function Home() {
             onClick={() => setModelType("local")}
             disabled={isLoading}
           >
-            🖥️ 로컬 모델
+            🖥️ 로컬(chain)
+          </button>
+          <button
+            className={`model-button ${modelType === "graph" ? "active" : ""}`}
+            onClick={() => setModelType("graph")}
+            disabled={isLoading}
+          >
+            🔗 로컬(graph)
           </button>
         </div>
       </header>
