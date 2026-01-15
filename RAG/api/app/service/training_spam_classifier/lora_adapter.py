@@ -28,7 +28,7 @@ api_dir = app_dir.parent  # api/
 
 sys.path.insert(0, str(api_dir))
 
-from app.service.spam_classifier.load_model import load_koelectra_model
+from app.service.training_spam_classifier.load_model import load_koelectra_model
 
 
 def setup_lora_config(

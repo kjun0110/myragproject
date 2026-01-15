@@ -12,20 +12,17 @@ interface Message {
   timestamp: Date;
 }
 
-type ModelType = "openai" | "local" | "graph";
-
-export default function Home() {
+export default function SpamPage() {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(() => [
     {
       id: "1",
       role: "assistant",
-      content: "안녕하세요! LangChain 챗봇입니다. 무엇을 도와드릴까요?",
+      content: "안녕하세요! LangGraph Spam 판독기입니다. 스팸 메일을 분석해드립니다.",
       timestamp: new Date(),
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
-  const [modelType, setModelType] = useState<ModelType>("openai");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -50,41 +47,21 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      // 디버깅: 전송하는 model_type 확인
-      console.log("[DEBUG] 전송하는 model_type:", modelType);
-
-      // graph 타입이면 /api/graph 엔드포인트 사용
-      const apiEndpoint = modelType === "graph" ? "/api/graph" : "/api/chat";
-      const requestBody = modelType === "graph"
-        ? {
-          message: content,
-          history: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        }
-        : {
-          message: content,
-          history: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          model_type: modelType, // "openai" 또는 "local"
-        };
-
-      // 타임아웃 설정 (로컬 모델은 더 오래 걸릴 수 있으므로 120초)
-      const timeout = modelType === "graph" || modelType === "local" ? 120000 : 30000;
+      // 타임아웃 설정 (스팸 분석은 시간이 걸릴 수 있으므로 120초)
+      const timeout = 120000;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       let response: Response;
       try {
-        response = await fetch(apiEndpoint, {
+        response = await fetch("/api/spam-analyze", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify({
+            email_text: content,
+          }),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -92,7 +69,7 @@ export default function Home() {
         clearTimeout(timeoutId);
         if (fetchError instanceof Error && fetchError.name === "AbortError") {
           throw new Error(
-            `요청 시간이 초과되었습니다 (${timeout / 1000}초). 모델이 로딩 중이거나 응답 생성에 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해주세요.`
+            `요청 시간이 초과되었습니다 (${timeout / 1000}초). 스팸 분석에 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해주세요.`
           );
         }
         throw fetchError;
@@ -100,52 +77,14 @@ export default function Home() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || errorData.detail || errorData.message || "응답을 받는 중 오류가 발생했습니다.";
-
-        // 백엔드 환경 불일치 에러 (400)
-        if (response.status === 400) {
-          // 백엔드가 로컬일 때 OpenAI 선택
-          if (errorMsg.includes("로컬환경") && modelType === "openai") {
-            const errorMessage: Message = {
-              id: (Date.now() + 1).toString(),
-              role: "assistant",
-              content: "ℹ️ 현재 로컬 환경입니다.",
-              timestamp: new Date(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
-            return;
-          }
-          // 백엔드가 클라우드일 때 로컬 모델 선택
-          if (errorMsg.includes("로컬 환경이 아닙니다") && (modelType === "local" || modelType === "graph")) {
-            const errorMessage: Message = {
-              id: (Date.now() + 1).toString(),
-              role: "assistant",
-              content: "ℹ️ 현재 EC2 환경입니다.",
-              timestamp: new Date(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
-            return;
-          }
-        }
-
-        // OpenAI 호출량 초과 에러
-        if (response.status === 429) {
-          const errorMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: "⚠️ OpenAI API 호출량이 초과되었습니다. 할당량을 확인하고 다시 시도해주세요. 또는 '로컬 모델' 버튼을 선택하여 로컬 모델을 사용해주세요.",
-            timestamp: new Date(),
-          };
-          setMessages((prev) => [...prev, errorMessage]);
-          return;
-        }
+        const errorMsg = errorData.detail || errorData.message || "스팸 분석 중 오류가 발생했습니다.";
 
         // 백엔드 연결 오류
         if (response.status === 503) {
           const errorMessage: Message = {
             id: (Date.now() + 1).toString(),
             role: "assistant",
-            content: `⚠️ ${errorMsg}`,
+            content: `⚠️ 모델 로드 실패: ${errorMsg}`,
             timestamp: new Date(),
           };
           setMessages((prev) => [...prev, errorMessage]);
@@ -157,28 +96,38 @@ export default function Home() {
 
       const data = await response.json();
 
-      // 에러 응답인지 확인
-      if (data.error) {
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: `⚠️ ${data.error}`,
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, errorMessage]);
-        return;
+      // 스팸 분석 결과 포맷팅
+      let resultContent = "";
+
+      // KoELECTRA 게이트웨이 결과
+      const gateResult = data.gate_result;
+      resultContent += `📊 KoELECTRA 게이트웨이 결과:\n`;
+      resultContent += `- 스팸 확률: ${(gateResult.spam_prob * 100).toFixed(2)}%\n`;
+      resultContent += `- 정상 확률: ${(gateResult.ham_prob * 100).toFixed(2)}%\n`;
+      resultContent += `- 판단: ${gateResult.label === "spam" ? "스팸" : "정상"}\n`;
+      resultContent += `- 신뢰도: ${gateResult.confidence === "high" ? "높음" : gateResult.confidence === "medium" ? "중간" : "낮음"}\n`;
+      resultContent += `- 처리 시간: ${gateResult.latency_ms}ms\n\n`;
+
+      // EXAONE Reader 결과 (있는 경우)
+      if (data.exaone_result) {
+        resultContent += `🔍 EXAONE Reader 정밀 검사:\n${data.exaone_result}\n\n`;
+      } else {
+        resultContent += `ℹ️ EXAONE Reader 호출 없음 (신뢰도가 충분하여 게이트웨이 결과만 사용)\n\n`;
       }
+
+      // 최종 결정
+      resultContent += `✅ 최종 판단:\n${data.final_decision}`;
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: data.response || "응답을 생성할 수 없습니다.",
+        content: resultContent,
         timestamp: new Date(),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
-      console.error("[ERROR] 메시지 전송 실패:", error);
+      console.error("[ERROR] 스팸 분석 실패:", error);
       let errorContent = "알 수 없는 오류가 발생했습니다.";
 
       if (error instanceof Error) {
@@ -208,40 +157,17 @@ export default function Home() {
       <header className="chat-header">
         <div className="header-top">
           <div className="header-title">
-            <h1>🤖 LangChain Chatbot</h1>
+            <h1>🔍 LangGraph Spam 판독기</h1>
             <button
               className="spam-button"
-              onClick={() => router.push("/spam")}
+              onClick={() => router.push("/")}
               disabled={isLoading}
             >
-              📧 스팸메일판독기
+              💬 챗봇
             </button>
           </div>
         </div>
-        <p>PGVector와 연동된 AI 챗봇</p>
-        <div className="model-selector">
-          <button
-            className={`model-button ${modelType === "openai" ? "active" : ""}`}
-            onClick={() => setModelType("openai")}
-            disabled={isLoading}
-          >
-            🌐 OpenAI
-          </button>
-          <button
-            className={`model-button ${modelType === "local" ? "active" : ""}`}
-            onClick={() => setModelType("local")}
-            disabled={isLoading}
-          >
-            🖥️ 로컬(chain)
-          </button>
-          <button
-            className={`model-button ${modelType === "graph" ? "active" : ""}`}
-            onClick={() => setModelType("graph")}
-            disabled={isLoading}
-          >
-            🔗 로컬(graph)
-          </button>
-        </div>
+        <p>KoELECTRA 게이트웨이 + EXAONE Reader 기반 스팸 메일 분석</p>
       </header>
 
       <main className="chat-main">
@@ -333,40 +259,7 @@ export default function Home() {
         .chat-header p {
           font-size: 0.9rem;
           opacity: 0.9;
-        }
-
-        .model-selector {
-          display: flex;
-          gap: 0.5rem;
-          margin-top: 1rem;
-          justify-content: center;
-        }
-
-        .model-button {
-          padding: 0.5rem 1rem;
-          border: 2px solid rgba(255, 255, 255, 0.3);
-          border-radius: 0.5rem;
-          background: rgba(255, 255, 255, 0.1);
-          color: white;
-          font-size: 0.9rem;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .model-button:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.2);
-          border-color: rgba(255, 255, 255, 0.5);
-        }
-
-        .model-button.active {
-          background: rgba(255, 255, 255, 0.3);
-          border-color: white;
-          font-weight: 600;
-        }
-
-        .model-button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
+          margin-top: 0.5rem;
         }
 
         .chat-main {
@@ -441,4 +334,3 @@ export default function Home() {
     </div>
   );
 }
-

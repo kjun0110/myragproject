@@ -660,9 +660,11 @@ async def startup_event():
 # 라우터 등록 (순환 import 방지를 위해 여기서 import)
 from app.router.chat_router import router as chat_router
 from app.router.graph_router import router as graph_router
+from app.router.mcp_router import router as mcp_router
 
 app.include_router(chat_router)
 app.include_router(graph_router)
+app.include_router(mcp_router)
 
 
 @app.get("/")

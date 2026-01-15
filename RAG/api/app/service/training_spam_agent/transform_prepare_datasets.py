@@ -18,7 +18,7 @@ project_root = api_dir.parent  # 프로젝트 루트
 
 sys.path.insert(0, str(api_dir))
 
-from app.service.spam_agent import (
+from app.service.training_spam_agent import (
     DataPreprocessor,
     DataSplitter,
     TokenizerUtils,
@@ -141,7 +141,7 @@ def main():
     print(f"  - validation_dataset/")
     print(f"  - test_dataset/")
     print(f"\n사용 방법:")
-    print(f"  from app.service.spam_agent import load_datasets")
+    print(f"  from app.service.training_spam_agent import load_datasets")
     print(f"  from pathlib import Path")
     print(f"  ")
     print(f"  train_dataset, val_dataset = load_datasets(")

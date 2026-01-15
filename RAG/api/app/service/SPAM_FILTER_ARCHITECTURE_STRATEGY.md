@@ -7,13 +7,13 @@
 **완료된 작업:**
 1. **KoELECTRA 모델 학습 환경 구축**
    - 데이터셋: `koelectra` 폴더 (train/validation/test 분할 완료)
-   - 학습 스크립트: `spam_classifier/lora_adapter.py`
-   - 테스트 스크립트: `spam_classifier/test_model.py`
+   - 학습 스크립트: `training_spam_classifier/lora_adapter.py`
+   - 테스트 스크립트: `training_spam_classifier/test_model.py`
    - 출력 경로: `koelectra-small-v3-discriminator-spam-lora/{timestamp}`
 
 2. **EXAONE 모델 학습 환경 구축**
    - 데이터셋: `exaone` 폴더 (train/validation/test 분할 완료)
-   - 학습 스크립트: `spam_agent/lora_adapter.py`
+   - 학습 스크립트: `training_spam_agent/lora_adapter.py`
    - 출력 경로: `exaone3.5-2.4b-spam-lora/{timestamp}`
    - 속도 최적화 적용 완료 (배치 크기, DataLoader, 시퀀스 길이)
 
@@ -38,14 +38,14 @@
 
 #### Task 1.1: KoELECTRA 학습 실행
 - **현재 상태**: 데이터셋 준비 완료 (19,657 train, 2,458 val)
-- **실행 명령**: `python api/app/service/spam_classifier/lora_adapter.py`
+- **실행 명령**: `python api/app/service/training_spam_classifier/lora_adapter.py`
 - **예상 시간**: 약 2-3시간 (GPU 사용 시)
 - **결과 확인**: 정확도, F1 스코어 확인
 - **검증**: `test_model.py`로 test.jsonl 평가
 
 #### Task 1.2: EXAONE 학습 실행
 - **현재 상태**: 데이터셋 준비 완료 (19,644 train, 2,455 val)
-- **실행 명령**: `python api/app/service/spam_agent/lora_adapter.py`
+- **실행 명령**: `python api/app/service/training_spam_agent/lora_adapter.py`
 - **예상 시간**: 약 3.8-4.0시간 (최적화 적용 후)
 - **결과 확인**: Loss, 생성 품질 확인
 - **검증**: 수동으로 샘플 생성 테스트
@@ -301,12 +301,12 @@ api/app/service/spam_notify/
 
 ### 1. KoELECTRA 학습 완료
 ```bash
-python api/app/service/spam_classifier/lora_adapter.py
+python api/app/service/training_spam_classifier/lora_adapter.py
 ```
 
 ### 2. EXAONE 학습 완료
 ```bash
-python api/app/service/spam_agent/lora_adapter.py
+python api/app/service/training_spam_agent/lora_adapter.py
 ```
 
 ### 3. 임계치 분석

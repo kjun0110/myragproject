@@ -28,7 +28,7 @@
 
 ```python
 from pathlib import Path
-from app.service.spam_agent import (
+from app.service.training_spam_agent import (
     DataPreprocessor,
     DataSplitter,
     TokenizerUtils,
@@ -95,7 +95,7 @@ HuggingFace Dataset 객체를 사용하면 SFTTrainer가 다음을 자동으로 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer
-from app.service.spam_agent import load_datasets
+from app.service.training_spam_agent import load_datasets
 from pathlib import Path
 
 # Dataset 로드
