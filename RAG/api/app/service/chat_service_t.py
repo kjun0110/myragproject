@@ -176,45 +176,11 @@ class ChatService:
         llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
         if llm_provider == "midm":
             try:
-                # 모듈 import 시도
-                try:
-                    from app.model.model_loader import load_midm_model
-                except ModuleNotFoundError as import_error:
-                    print(
-                        f"[WARNING] app.model.model_loader 모듈을 찾을 수 없습니다: {str(import_error)}"
-                    )
-                    print("   로컬 LLM 모델 기능을 사용할 수 없습니다.")
-                    self.local_llm = None
-                    # import 실패 시 더 이상 진행하지 않음
-                    if not self.openai_llm:
-                        print(
-                            "[INFO] LLM 모델이 없어도 서버는 시작됩니다. "
-                            "단, RAG 기능을 사용하려면 최소 하나의 LLM 모델이 필요합니다."
-                        )
-                        return
-                    return
+                from app.service.model_service import load_midm_model_for_service
 
-                # GPU 메모리 정리
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-                # .env 파일에서 LOCAL_MODEL_DIR 읽기
-                local_model_dir = self.model_name_or_path or os.getenv("LOCAL_MODEL_DIR")
-                if local_model_dir:
-                    # 상대 경로를 절대 경로로 변환
-                    if not Path(local_model_dir).is_absolute():
-                        # 프로젝트 루트 기준으로 변환
-                        project_root = Path(__file__).parent.parent.parent.parent
-                        local_model_dir = str(project_root / local_model_dir)
-                    print(f"[INFO] 로컬 모델 디렉토리: {local_model_dir}")
-                    midm_model = load_midm_model(
-                        model_path=local_model_dir, register=False, is_default=False
-                    )
-                else:
-                    midm_model = load_midm_model(register=False, is_default=False)
-
-                self.local_llm = midm_model.get_langchain_model()
-                print("[OK] 로컬 Midm LLM 모델 초기화 완료")
+                self.local_llm = load_midm_model_for_service(
+                    model_path=self.model_name_or_path, register=False
+                )
             except Exception as local_error:
                 error_msg = str(local_error)
                 print(f"[WARNING] 로컬 Midm 모델 초기화 실패: {error_msg[:200]}...")

@@ -1,9 +1,6 @@
-import os
-from pathlib import Path
 from typing import Annotated, TypedDict
 
-# ✅ 로컬 Exaone3.5 모델 사용
-from app.model.exaone_model import ExaoneLLM
+# ✅ 로컬 Exaone3.5 모델 사용 (model_service를 통해 로드)
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import END, StateGraph
@@ -47,52 +44,27 @@ def _load_exaone_model():
     if _llm is not None:
         return _llm
 
+    # 이전 에러가 있으면 재시도하지 않고 바로 에러 반환
     if _llm_error is not None:
-        raise RuntimeError(f"모델 로드 실패 (이전 에러): {_llm_error}")
+        raise RuntimeError(f"이전 모델 로드 실패: {_llm_error}")
 
     if _llm_loading:
         raise RuntimeError("모델이 현재 로딩 중입니다. 잠시 후 다시 시도해주세요.")
 
     _llm_loading = True
     try:
-        # exaone3.5 모델 경로 설정
-        current_file = Path(__file__)
-        model_dir = current_file.parent / "model" / "exaone3.5" / "exaone-2.4b"
-
-        if model_dir.exists() and (model_dir / "config.json").exists():
-            model_path = str(model_dir)
-            print(f"[INFO] Exaone3.5 모델 디렉토리: {model_path}")
-        else:
-            # 환경 변수에서 모델 경로 확인
-            model_path = os.getenv("EXAONE_MODEL_DIR")
-            if model_path:
-                # 상대 경로를 절대 경로로 변환
-                if not Path(model_path).is_absolute():
-                    project_root = current_file.parent.parent.parent
-                    model_path = str(project_root / model_path)
-                print(f"[INFO] Exaone3.5 모델 디렉토리 (환경 변수): {model_path}")
-            else:
-                raise FileNotFoundError(
-                    f"Exaone3.5 모델을 찾을 수 없습니다. "
-                    f"예상 경로: {model_dir} 또는 EXAONE_MODEL_DIR 환경 변수를 설정하세요."
-                )
+        from app.service.model_service import load_exaone_model_for_service
 
         # Exaone 모델 로드
         print("[INFO] Exaone3.5 모델 로딩 시작... (이 작업은 몇 분이 걸릴 수 있습니다)")
-        exaone_model = ExaoneLLM(
-            model_path=model_path,
-            device_map="auto",
-            dtype="auto",
-            trust_remote_code=True,
-        )
+        _llm = load_exaone_model_for_service()
 
-        # LangChain 모델 가져오기
-        _llm = exaone_model.get_langchain_model()
         # Tool binding
         _llm = _llm.bind_tools(TOOLS)
         print("[OK] 로컬 Exaone3.5 모델이 graph.py에서 로드되었습니다.")
         print("[INFO] Tool calling이 활성화되었습니다.")
         _llm_loading = False
+        _llm_error = None  # 성공 시 에러 상태 초기화
         return _llm
 
     except Exception as e:

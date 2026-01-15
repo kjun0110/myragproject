@@ -58,6 +58,9 @@ __pycache__/
 dist/
 build/
 
+#data files
+api/app/data/
+
 # Python model files
 api/app/model/
 api/app/model/exaone3.5

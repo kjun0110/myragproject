@@ -8,10 +8,8 @@ const withPWA = require("next-pwa")({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Next.js 16에서 Turbopack 비활성화 (next-pwa와 호환을 위해)
-  experimental: {
-    turbo: false,
-  },
+  // Turbopack 경고 해결 (next-pwa는 webpack 사용, 하지만 빌드 시 turbopack 설정 필요)
+  turbopack: {},
 };
 
 module.exports = withPWA(nextConfig);

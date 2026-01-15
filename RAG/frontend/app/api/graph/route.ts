@@ -81,11 +81,18 @@ export async function POST(request: NextRequest) {
       console.error("Backend connection error:", backendError);
 
       // 타임아웃 에러 확인
+      const causeCode = backendError instanceof Error &&
+        backendError.cause &&
+        typeof backendError.cause === 'object' &&
+        'code' in backendError.cause
+        ? (backendError.cause as { code?: string }).code
+        : undefined;
+
       if (
         backendError instanceof Error &&
         (backendError.message.includes("시간이 초과") ||
           backendError.message.includes("AbortError") ||
-          backendError.cause?.code === "UND_ERR_HEADERS_TIMEOUT")
+          causeCode === "UND_ERR_HEADERS_TIMEOUT")
       ) {
         return NextResponse.json(
           {

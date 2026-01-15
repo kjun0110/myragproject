@@ -245,27 +245,9 @@ def initialize_llm():
 
     # 로컬 Midm LLM 초기화
     try:
-        from app.model.model_loader import load_midm_model
+        from app.service.model_service import load_midm_model_for_service
 
-        # .env 파일에서 LOCAL_MODEL_DIR 읽기
-        local_model_dir = os.getenv("LOCAL_MODEL_DIR")
-        if local_model_dir:
-            # 상대 경로를 절대 경로로 변환
-            from pathlib import Path
-
-            if not Path(local_model_dir).is_absolute():
-                # 프로젝트 루트 기준으로 변환
-                project_root = Path(__file__).parent.parent.parent
-                local_model_dir = str(project_root / local_model_dir)
-            print(f"[INFO] 로컬 모델 디렉토리: {local_model_dir}")
-            midm_model = load_midm_model(
-                model_path=local_model_dir, register=False, is_default=False
-            )
-        else:
-            midm_model = load_midm_model(register=False, is_default=False)
-
-        local_llm = midm_model.get_langchain_model()
-        print("[OK] 로컬 Midm LLM 모델 초기화 완료")
+        local_llm = load_midm_model_for_service(register=False)
     except Exception as local_error:
         error_msg = str(local_error)
         print(f"[WARNING] 로컬 Midm 모델 초기화 실패: {error_msg[:200]}...")
@@ -664,6 +646,7 @@ async def startup_event():
     print("\n7. Exaone3.5 모델 사전 로드 중...")
     try:
         from app.graph import preload_exaone_model
+
         preload_exaone_model()
     except Exception as e:
         print(f"[WARNING] Exaone 모델 사전 로드 실패: {str(e)}")
