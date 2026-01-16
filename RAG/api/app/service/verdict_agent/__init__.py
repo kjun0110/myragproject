@@ -5,7 +5,7 @@ from app.service.verdict_agent.base_model import (
     is_exaone_model_loaded,
     load_exaone_model,
 )
-from app.service.verdict_agent.gragh import (
+from app.service.verdict_agent.graph import (
     VERDICT_TOOLS,
     analyze_with_exaone,
     exaone_spam_analyzer,
@@ -18,7 +18,7 @@ __all__ = [
     "load_exaone_model",
     "get_exaone_model",
     "is_exaone_model_loaded",
-    # gragh
+    # graph
     "analyze_with_exaone",
     "get_verdict_agent_graph",
     "exaone_spam_analyzer",
