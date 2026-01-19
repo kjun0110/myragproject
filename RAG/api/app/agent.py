@@ -4,7 +4,7 @@
 KoELECTRA 게이트웨이 + EXAONE Reader 기반 스팸 메일 분석 서버입니다.
 
 실행 방법:
-    python -m uvicorn app.agent:app --reload --port 8000
+    python -m uvicorn app.agent:app --reload --port 8001
     또는
     python app/agent.py
 """
@@ -33,11 +33,9 @@ try:
 except ImportError:
     pass  # python-dotenv가 없으면 환경 변수만 사용
 
+# FastAPI 및 라우터 import
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# 라우터 import
-from app.router.mcp_router import router as mcp_router
 
 # FastAPI 앱 생성
 app = FastAPI(
@@ -56,6 +54,8 @@ app.add_middleware(
 )
 
 # 라우터 등록
+from app.routers.mcp_spam_router import router as mcp_router
+
 app.include_router(mcp_router)
 
 
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     import uvicorn
 
     # 포트 설정 (환경 변수 또는 기본값)
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8000))  # 기본값 8000
     host = os.getenv("HOST", "0.0.0.0")
 
     print("=" * 60)
@@ -95,7 +95,7 @@ if __name__ == "__main__":
     print(f"🔍 헬스 체크: http://{host}:{port}/health")
     print("=" * 60)
     print("\n주요 엔드포인트:")
-    print("  - POST /api/mcp/gate          : KoELECTRA 게이트웨이")
+    print("  - POST /api/mcp/gate          : KoELECTRA 게이트웨이 (도메인 분류)")
     print("  - POST /api/mcp/spam-analyze  : 전체 스팸 분석 (KoELECTRA + EXAONE)")
     print("  - GET  /api/mcp/gate/state    : 상태 조회")
     print("=" * 60)

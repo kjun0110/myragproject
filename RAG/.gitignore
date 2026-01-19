@@ -60,10 +60,10 @@ build/
 
 #data files
 api/app/data/
+api/app/domains/training/data/
 
 # Python model files
-api/app/model/
-api/app/model/exaone3.5
+api/artifacts/
 
 # LangChain library (if not needed in repo)
 libs/langchain/

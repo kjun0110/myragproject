@@ -47,8 +47,8 @@ export default function SpamPage() {
     setIsLoading(true);
 
     try {
-      // 타임아웃 설정 (스팸 분석은 시간이 걸릴 수 있으므로 120초)
-      const timeout = 120000;
+      // 타임아웃 설정 (스팸 분석은 시간이 걸릴 수 있으므로 240초)
+      const timeout = 240000;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
