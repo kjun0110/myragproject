@@ -1,4 +1,4 @@
-# Windows 심볼릭 링크 권한 설정 가이드
+****# Windows 심볼릭 링크 권한 설정 가이드
 
 ## 방법 1: Windows Developer Mode 활성화 (권장)
 

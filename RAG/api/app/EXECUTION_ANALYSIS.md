@@ -132,7 +132,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import chat_router, graph_router, mcp_spam_router
 from app.domains.chat.agents.chat_service import ChatService
-from app.common.config.settings import get_settings
+from app.common.config.config import get_settings
 
 app = FastAPI(title="RAG API", version="1.0.0")
 
