@@ -12,10 +12,26 @@ interface ChatMessageProps {
 export default function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
 
+  // 간단한 마크다운 스타일 처리 (코드 블록, 링크 등)
+  const formatContent = (content: string) => {
+    // 코드 블록 처리
+    content = content.replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+    // 인라인 코드 처리
+    content = content.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // 링크 처리
+    content = content.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    // 볼드 처리
+    content = content.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    return content;
+  };
+
   return (
     <div className={`message ${isUser ? "user" : "assistant"}`}>
       <div className="message-content">
-        <div className="message-text">{message.content}</div>
+        <div
+          className="message-text"
+          dangerouslySetInnerHTML={{ __html: formatContent(message.content) }}
+        />
         <div className="message-time">
           {message.timestamp.toLocaleTimeString("ko-KR", {
             hour: "2-digit",
@@ -62,6 +78,36 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         .message-text {
           line-height: 1.5;
           white-space: pre-wrap;
+        }
+
+        .message-text :global(code) {
+          background: rgba(0, 0, 0, 0.05);
+          padding: 0.2rem 0.4rem;
+          border-radius: 0.25rem;
+          font-family: monospace;
+          font-size: 0.9em;
+        }
+
+        .message-text :global(pre) {
+          background: rgba(0, 0, 0, 0.05);
+          padding: 1rem;
+          border-radius: 0.5rem;
+          overflow-x: auto;
+          margin: 0.5rem 0;
+        }
+
+        .message-text :global(pre code) {
+          background: none;
+          padding: 0;
+        }
+
+        .message-text :global(a) {
+          color: #667eea;
+          text-decoration: underline;
+        }
+
+        .message-text :global(strong) {
+          font-weight: 600;
         }
 
         .message-time {

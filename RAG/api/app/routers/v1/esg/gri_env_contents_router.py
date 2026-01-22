@@ -3,10 +3,14 @@
 GRI 환경 도메인 콘텐츠 관련 API 엔드포인트를 제공합니다.
 """
 
+import logging
 import sys
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 # 프로젝트 루트를 Python 경로에 추가
 current_file = Path(__file__).resolve()
@@ -27,6 +31,48 @@ from app.domains.esg.total.orchestrator.gri_env_contents_flow import (
 )
 
 router = APIRouter()
+
+
+# 채팅 요청/응답 모델
+class ChatRequest(BaseModel):
+    """채팅 요청 모델."""
+    message: str
+    history: list[dict] | None = None
+
+
+class ChatResponse(BaseModel):
+    """채팅 응답 모델."""
+    response: str
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_gri_env_content(request: ChatRequest, http_request: Request):
+    """GRI 환경 도메인 콘텐츠 채팅 엔드포인트."""
+    # 연결 확인 로그
+    client_host = http_request.client.host if http_request.client else None
+    logger.info("=" * 70)
+    logger.info(f"[GRI_ENV_MCP] 채팅 요청 수신")
+    logger.info(f"[GRI_ENV_MCP] 클라이언트 호스트: {client_host}")
+    logger.info(f"[GRI_ENV_MCP] 메시지: {request.message}")
+    logger.info(f"[GRI_ENV_MCP] 히스토리 길이: {len(request.history) if request.history else 0}")
+    logger.info("=" * 70)
+
+    try:
+        # orchestrator를 사용하여 메시지 처리
+        orchestrator = get_gri_env_contents_orchestrator()
+        result = orchestrator.analyze(text=request.message)
+
+        # 응답 생성 (실제로는 orchestrator의 결과를 사용)
+        response_text = f"GRI 환경 도메인 콘텐츠에 대한 응답: {request.message}"
+
+        logger.info(f"[GRI_ENV_MCP] 응답 생성 완료: {response_text[:100]}...")
+
+        return ChatResponse(response=response_text)
+    except Exception as e:
+        logger.error(f"[GRI_ENV_MCP] 오류 발생: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500, detail=f"GRI 환경 도메인 콘텐츠 채팅 실패: {str(e)}"
+        )
 
 
 @router.post("/", response_model=GRIEnvContentResponse)

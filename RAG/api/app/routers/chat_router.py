@@ -11,6 +11,9 @@ import os
 # 스키마 import
 from app.domains.chat.models.base_model import ChatRequest, ChatResponse
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessage, HumanMessage
+import asyncio
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -70,7 +73,7 @@ async def chat(request: ChatRequest, http_request: Request):
             detail="현재 로컬환경입니다. 로컬 모델을 사용해주세요.",
         )
 
-    if not is_localhost and model_type == "local":
+    if not is_localhost and model_type in ["local", "graph"]:
         raise HTTPException(
             status_code=400,
             detail="현재 로컬 환경이 아닙니다. OpenAI 모델을 사용해주세요.",
@@ -82,14 +85,92 @@ async def chat(request: ChatRequest, http_request: Request):
     )
 
     try:
-        # ChatService를 통해 RAG 체인 실행
-        response_text = chat_service.chat_with_rag(
-            message=request.message,
-            history=request.history,
-            model_type=model_type,
-        )
+        # graph 모드일 때는 LangGraph 사용 (Exaone 모델)
+        if model_type == "graph":
+            print("[DEBUG] graph 모드 감지 - LangGraph (Exaone) 사용")
+            from app.domains.chat.agents.graph import run_once
 
-        return ChatResponse(response=response_text)
+            response_text = run_once(request.message)
+            return ChatResponse(response=response_text)
+
+        # 그 외 모드는 ChatService를 통해 RAG 체인 실행 (스트리밍)
+        # 스트리밍 제너레이터 생성
+        async def stream_response():
+            try:
+                # 적절한 RAG 체인 선택
+                if model_type == "openai":
+                    if not chat_service.openai_rag_chain:
+                        if chat_service.openai_quota_exceeded:
+                            yield "OpenAI API 할당량이 초과되었습니다."
+                            return
+                        else:
+                            yield "OpenAI RAG 체인이 초기화되지 않았습니다."
+                            return
+                    current_rag_chain = chat_service.openai_rag_chain
+                elif model_type == "local":
+                    if not chat_service.local_rag_chain:
+                        yield "로컬 RAG 체인이 초기화되지 않았습니다."
+                        return
+                    current_rag_chain = chat_service.local_rag_chain
+                else:
+                    yield f"지원하지 않는 모델 타입입니다: {model_type}"
+                    return
+
+                # 대화 기록을 LangChain 메시지 형식으로 변환
+                chat_history = []
+                if request.history:
+                    for msg in request.history:
+                        if msg.get("role") == "user":
+                            chat_history.append(HumanMessage(content=msg.get("content", "")))
+                        elif msg.get("role") == "assistant":
+                            chat_history.append(AIMessage(content=msg.get("content", "")))
+
+                # RAG 체인 스트리밍 실행
+                accumulated_text = ""
+                full_response = ""
+                async for chunk in current_rag_chain.astream(
+                    {
+                        "input": request.message,
+                        "chat_history": chat_history,
+                    }
+                ):
+                    # chunk에서 answer 추출
+                    if isinstance(chunk, dict):
+                        answer = chunk.get("answer", "")
+                        if answer:
+                            full_response = answer
+                            # 새로 추가된 부분만 추출
+                            if len(answer) > len(accumulated_text):
+                                delta = answer[len(accumulated_text):]
+                                accumulated_text = answer
+                                # 한 글자씩 스트리밍
+                                for char in delta:
+                                    yield char
+                                    await asyncio.sleep(0.01)
+                    elif isinstance(chunk, str):
+                        full_response = chunk
+                        if len(chunk) > len(accumulated_text):
+                            delta = chunk[len(accumulated_text):]
+                            accumulated_text = chunk
+                            # 한 글자씩 스트리밍
+                            for char in delta:
+                                yield char
+                                await asyncio.sleep(0.01)
+
+                # 스트리밍 완료 후 최종 응답 정리 (태그 제거 등)
+                # 이미 chat_with_rag에서 정리하지만, 스트리밍에서는 직접 처리하므로
+                # 여기서도 정리 로직을 적용할 수 있음 (선택사항)
+
+            except Exception as e:
+                error_msg = str(e)
+                print(f"[ERROR] 스트리밍 중 오류: {error_msg}")
+                yield f"\n\n[오류 발생: {error_msg}]"
+
+        # 스트리밍 응답 반환
+        return StreamingResponse(
+            stream_response(),
+            media_type="text/plain; charset=utf-8",
+        )
 
     except ValueError as e:
         error_msg = str(e)

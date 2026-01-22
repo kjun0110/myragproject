@@ -1,4 +1,5 @@
 # ✅ 로컬 Exaone3.5 모델 사용 (model_service를 통해 로드)
+import re
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import END, StateGraph
@@ -175,4 +176,44 @@ def run_once(user_text: str):
         ]
     }
     out = graph.invoke(init_state)
-    return out["messages"][-1].content
+    response_text = out["messages"][-1].content
+
+    # 응답 정리: 시스템 프롬프트, 태그, 과거 대화 내용 제거
+    if response_text:
+        # 1. [[system]], [[endofturn]], [[assistant]] 같은 태그 제거
+        response_text = re.sub(r'\[\[system\]\].*?\[\[endofturn\]\]\s*', '', response_text, flags=re.DOTALL)
+        response_text = re.sub(r'\[\[assistant\]\]\s*', '', response_text, flags=re.IGNORECASE)
+        response_text = re.sub(r'\[\[endofturn\]\]\s*', '', response_text, flags=re.IGNORECASE)
+        response_text = re.sub(r'\[\[user\]\]\s*', '', response_text, flags=re.IGNORECASE)
+
+        # 2. Human:, Assistant: 같은 이전 대화 형식 제거
+        if "Human:" in response_text or "Assistant:" in response_text:
+            # 마지막 Assistant: 이후만 추출
+            assistant_match = re.search(
+                r"Assistant:\s*(.+?)(?:\nHuman:|$)", response_text, re.DOTALL
+            )
+            if assistant_match:
+                response_text = assistant_match.group(1).strip()
+
+        # 3. 간단한 인사에 대한 응답 정리
+        if any(greeting in user_text.lower() for greeting in ["안녕", "안녕하세요", "hi", "hello"]):
+            # 인사에 대한 간단한 응답만 남기기
+            lines = response_text.split('\n')
+            clean_lines = []
+            for line in lines:
+                line = line.strip()
+                # 빈 줄, 태그, 시스템 메시지 제외
+                if not line or line.startswith('[') or 'system' in line.lower() or 'endofturn' in line.lower():
+                    continue
+                # 사용자 질문 반복 제거
+                if any(greeting in line.lower() for greeting in ["너 이름이", "what's your name", "who are you"]):
+                    continue
+                clean_lines.append(line)
+
+            if clean_lines:
+                response_text = '\n'.join(clean_lines)
+            else:
+                # 기본 인사 응답
+                response_text = "안녕하세요! 어떻게 도와드릴 수 있을까요? 궁금한 점이 있거나 도움이 필요한 사항이 있으면 말씀해 주세요. 😊"
+
+    return response_text

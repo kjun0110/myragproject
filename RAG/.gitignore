@@ -61,6 +61,7 @@ build/
 #data files
 api/app/data/
 api/app/domains/training/data/
+api/training/data/
 
 # Python model files
 api/artifacts/

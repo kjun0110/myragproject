@@ -12,20 +12,17 @@ interface Message {
   timestamp: Date;
 }
 
-type ModelType = "openai" | "local" | "graph";
-
-export default function Home() {
+export default function GriEnvPage() {
   const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(() => [
     {
       id: "1",
       role: "assistant",
-      content: "안녕하세요! LangChain 챗봇입니다. 무엇을 도와드릴까요?",
+      content: "안녕하세요! GRI 환경 컨텐츠 MCP 챗봇입니다. 무엇을 도와드릴까요?",
       timestamp: new Date(),
     },
   ]);
   const [isLoading, setIsLoading] = useState(false);
-  const [modelType, setModelType] = useState<ModelType>("openai");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -50,35 +47,33 @@ export default function Home() {
     setIsLoading(true);
 
     try {
-      // 디버깅: 전송하는 model_type 확인
-      console.log("[DEBUG] 전송하는 model_type:", modelType);
+      // 디버깅: GRI_ENV_MCP 채팅 요청 시작
+      console.log("[DEBUG] GRI_ENV_MCP 채팅 요청 시작");
 
-      // graph 모드는 /api/graph, 나머지는 /api/chat 사용
-      const apiEndpoint = modelType === "graph" ? "/api/graph" : "/api/chat";
-      const requestBody = modelType === "graph"
-        ? {
-          message: content,
-          history: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        }
-        : {
-          message: content,
-          history: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          model_type: modelType, // "openai" 또는 "local"
-        };
+      // GRI 환경 컨텐츠 MCP 라우터로 연결
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      const apiEndpoint = `${backendUrl}/api/v1/esg/gri-env-contents/chat`;
+      console.log("[DEBUG] 백엔드 URL:", backendUrl);
+      console.log("[DEBUG] API 엔드포인트:", apiEndpoint);
+      // GRI 환경 컨텐츠 MCP 요청 본문
+      const requestBody = {
+        message: content,
+        history: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      };
 
-      // 타임아웃 설정 (로컬 모델은 더 오래 걸릴 수 있으므로 120초)
-      const timeout = modelType === "graph" || modelType === "local" ? 120000 : 30000;
+      console.log("[DEBUG] 요청 본문:", JSON.stringify(requestBody, null, 2));
+
+      // 타임아웃 설정
+      const timeout = 30000; // 30초
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
       let response: Response;
       try {
+        console.log("[DEBUG] GRI_ENV_MCP 요청 전송 중...");
         response = await fetch(apiEndpoint, {
           method: "POST",
           headers: {
@@ -88,6 +83,7 @@ export default function Home() {
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
+        console.log("[DEBUG] GRI_ENV_MCP 응답 수신:", response.status, response.statusText);
       } catch (fetchError) {
         clearTimeout(timeoutId);
         if (fetchError instanceof Error && fetchError.name === "AbortError") {
@@ -184,106 +180,32 @@ export default function Home() {
         throw new Error(errorMsg);
       }
 
-      // 모든 모드에서 스트리밍 처리 (Content-Type 확인)
-      const contentType = response.headers.get("content-type");
-      const isStreaming = contentType && contentType.includes("text/plain");
+      // 비스트리밍 처리 (GRI 환경 컨텐츠 MCP)
+      console.log("[DEBUG] GRI_ENV_MCP 응답 파싱 중...");
+      const data = await response.json();
+      console.log("[DEBUG] GRI_ENV_MCP 응답 데이터:", data);
 
-      if (isStreaming || modelType === "graph") {
-        console.log("[DEBUG] 스트리밍 응답 처리 시작");
-
-        // 스트리밍 응답 처리
-        if (!response.body) {
-          throw new Error("스트리밍 응답을 받을 수 없습니다.");
-        }
-
-        // 스트리밍 메시지 생성 (초기 상태)
-        const streamingMessageId = (Date.now() + 1).toString();
-        const streamingMessage: Message = {
-          id: streamingMessageId,
-          role: "assistant",
-          content: "",
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, streamingMessage]);
-        console.log("[DEBUG] 스트리밍 메시지 초기화 완료, ID:", streamingMessageId);
-
-        // ReadableStream 처리
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let accumulatedText = "";
-        let buffer = "";
-
-        try {
-          while (true) {
-            const { done, value } = await reader.read();
-
-            if (done) {
-              console.log("[DEBUG] 스트리밍 완료, 최종 텍스트 길이:", accumulatedText.length);
-              break;
-            }
-
-            // 청크 디코딩 (순수 텍스트 스트리밍)
-            const chunk = decoder.decode(value, { stream: true });
-
-            if (chunk) {
-              // 순수 텍스트 스트리밍
-              accumulatedText += chunk;
-              console.log("[DEBUG] 누적 텍스트:", accumulatedText.substring(0, 100));
-
-              // 실시간 업데이트
-              setMessages((prev) => {
-                const updated = [...prev];
-                const msgIndex = updated.findIndex((m) => m.id === streamingMessageId);
-                if (msgIndex !== -1) {
-                  updated[msgIndex] = {
-                    ...updated[msgIndex],
-                    content: accumulatedText,
-                  };
-                }
-                return updated;
-              });
-            }
-          }
-
-        } catch (streamError) {
-          console.error("[ERROR] 스트리밍 처리 실패:", streamError);
-          setMessages((prev) => {
-            const updated = [...prev];
-            const msgIndex = updated.findIndex((m) => m.id === streamingMessageId);
-            if (msgIndex !== -1) {
-              updated[msgIndex] = {
-                ...updated[msgIndex],
-                content: accumulatedText || "⚠️ 스트리밍 중 오류가 발생했습니다.",
-              };
-            }
-            return updated;
-          });
-        }
-      } else {
-        // 비스트리밍 처리 (기존 로직)
-        const data = await response.json();
-
-        // 에러 응답인지 확인
-        if (data.error) {
-          const errorMessage: Message = {
-            id: (Date.now() + 1).toString(),
-            role: "assistant",
-            content: `⚠️ ${data.error}`,
-            timestamp: new Date(),
-          };
-          setMessages((prev) => [...prev, errorMessage]);
-          return;
-        }
-
-        const assistantMessage: Message = {
+      // 에러 응답인지 확인
+      if (data.error || data.detail) {
+        const errorMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: data.response || "응답을 생성할 수 없습니다.",
+          content: `⚠️ ${data.error || data.detail}`,
           timestamp: new Date(),
         };
-
-        setMessages((prev) => [...prev, assistantMessage]);
+        setMessages((prev) => [...prev, errorMessage]);
+        return;
       }
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: data.response || "응답을 생성할 수 없습니다.",
+        timestamp: new Date(),
+      };
+
+      console.log("[DEBUG] GRI_ENV_MCP 메시지 추가 완료");
+      setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("[ERROR] 메시지 전송 실패:", error);
       let errorContent = "알 수 없는 오류가 발생했습니다.";
@@ -315,47 +237,17 @@ export default function Home() {
       <header className="chat-header">
         <div className="header-top">
           <div className="header-title">
-            <h1>🤖 LangChain Chatbot</h1>
+            <h1>🌿 GRI 환경 컨텐츠 MCP</h1>
             <button
               className="spam-button"
-              onClick={() => router.push("/spam")}
+              onClick={() => router.push("/")}
               disabled={isLoading}
             >
-              📧 스팸메일판독기
+              🏠 홈으로
             </button>
           </div>
         </div>
-        <p>PGVector와 연동된 AI 챗봇</p>
-        <div className="model-selector">
-          <button
-            className={`model-button ${modelType === "openai" ? "active" : ""}`}
-            onClick={() => setModelType("openai")}
-            disabled={isLoading}
-          >
-            🌐 OpenAI
-          </button>
-          <button
-            className={`model-button ${modelType === "local" ? "active" : ""}`}
-            onClick={() => setModelType("local")}
-            disabled={isLoading}
-          >
-            🖥️ 로컬(chain)
-          </button>
-          <button
-            className={`model-button ${modelType === "graph" ? "active" : ""}`}
-            onClick={() => setModelType("graph")}
-            disabled={isLoading}
-          >
-            🔗 로컬(graph)
-          </button>
-          <button
-            className="model-button"
-            onClick={() => router.push("/gri_env_mcp")}
-            disabled={isLoading}
-          >
-            🌿 gri_env_mcp
-          </button>
-        </div>
+        <p>GRI 환경 컨텐츠 MCP 챗봇</p>
       </header>
 
       <main className="chat-main">
@@ -555,4 +447,3 @@ export default function Home() {
     </div>
   );
 }
-

@@ -13,85 +13,67 @@ export async function POST(request: NextRequest) {
     }
 
     // LangChain 백엔드 API 호출
-    // docker-compose의 langchain-app 서비스와 통신
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    try {
-      // 디버깅: 백엔드 URL과 model_type 확인
-      console.log("[DEBUG] 백엔드 URL:", backendUrl);
-      console.log("[DEBUG] Next.js API route에서 받은 model_type:", model_type);
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-      const response = await fetch(`${backendUrl}/api/chain`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message,
-          history: history || [],
-          model_type: model_type, // 프론트엔드에서 전달된 값 그대로 사용 (기본값 없음)
-        }),
-      });
+    // 디버깅: 백엔드 URL과 model_type 확인
+    console.log("[DEBUG] 백엔드 URL:", backendUrl);
+    console.log("[DEBUG] Next.js API route에서 받은 model_type:", model_type);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.detail || errorData.message || response.statusText;
+    const response = await fetch(`${backendUrl}/api/chain`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message,
+        history: history || [],
+        model_type: model_type,
+      }),
+    });
 
-        // OpenAI 호출량 초과 에러 (429)
-        if (response.status === 429) {
-          return NextResponse.json(
-            {
-              error: "OpenAI API 호출량이 초과되었습니다. 할당량을 확인하고 다시 시도해주세요.",
-              status: 429,
-            },
-            { status: 429 }
-          );
-        }
-
-        // 기타 백엔드 오류 (400 포함)
-        return NextResponse.json(
-          {
-            error: errorMessage || "백엔드 서버 오류가 발생했습니다.",
-            detail: errorData.detail || errorMessage, // detail 필드도 함께 전달
-            status: response.status,
-          },
-          { status: response.status }
-        );
-      }
-
-      const data = await response.json();
-      return NextResponse.json({ response: data.response || data.message });
-    } catch (backendError) {
-      // 백엔드 연결 실패 (서버가 실행되지 않음)
-      console.error("Backend connection error:", backendError);
-
-      // 네트워크 오류인지 확인
-      if (backendError instanceof TypeError && backendError.message.includes("fetch")) {
-        return NextResponse.json(
-          {
-            error: "백엔드 서버에 연결할 수 없습니다. 백엔드 서비스가 실행 중인지 확인해주세요.",
-            status: 503,
-          },
-          { status: 503 }
-        );
-      }
-
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
       return NextResponse.json(
         {
-          error: "백엔드 서버와 통신 중 오류가 발생했습니다.",
-          status: 500,
+          error: errorData.detail || errorData.message || "백엔드 서버 오류가 발생했습니다.",
+          status: response.status,
         },
-        { status: 500 }
+        { status: response.status }
       );
     }
+
+    // Content-Type 확인하여 스트리밍 여부 판단
+    const contentType = response.headers.get("content-type");
+
+    if (contentType && contentType.includes("text/plain")) {
+      // 스트리밍 응답 처리
+      if (!response.body) {
+        return NextResponse.json(
+          { error: "스트리밍 응답을 받을 수 없습니다." },
+          { status: 500 }
+        );
+      }
+
+      // 백엔드의 텍스트 스트림을 그대로 전달
+      return new Response(response.body, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    } else {
+      // 기존 JSON 응답 처리
+      const data = await response.json();
+      return NextResponse.json(data);
+    }
   } catch (error) {
-    console.error("API error:", error);
+    console.error("[ERROR] API 라우트 오류:", error);
     return NextResponse.json(
       {
-        error: "서버 오류가 발생했습니다.",
-        details: error instanceof Error ? error.message : "알 수 없는 오류",
+        error: error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.",
       },
       { status: 500 }
     );
   }
 }
-

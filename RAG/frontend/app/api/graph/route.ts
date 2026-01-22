@@ -13,57 +13,35 @@ export async function POST(request: NextRequest) {
     }
 
     // LangGraph 백엔드 API 호출
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+
+    // 디버깅: 백엔드 URL 확인
+    console.log("[DEBUG] LangGraph 백엔드 URL:", backendUrl);
+
+    // 타임아웃 설정 (로컬 모델은 시간이 오래 걸릴 수 있으므로 120초)
+    const timeout = 120000; // 120초
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
     try {
-      // 디버깅: 백엔드 URL 확인
-      console.log("[DEBUG] LangGraph 백엔드 URL:", backendUrl);
+      const response = await fetch(`${backendUrl}/api/graph`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message,
+          history: history || [],
+        }),
+        signal: controller.signal,
+      });
 
-      // 타임아웃 설정 (로컬 모델은 시간이 오래 걸릴 수 있으므로 120초)
-      const timeout = 120000; // 120초
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      let response: Response;
-      try {
-        response = await fetch(`${backendUrl}/api/graph`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            message,
-            history: history || [],
-          }),
-          signal: controller.signal,
-          // Next.js fetch 타임아웃 설정
-          next: { revalidate: 0 },
-        } as RequestInit);
-        clearTimeout(timeoutId);
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        if (fetchError instanceof Error && fetchError.name === "AbortError") {
-          throw new Error("요청 시간이 초과되었습니다. 모델이 로딩 중이거나 응답 생성에 시간이 오래 걸리고 있습니다.");
-        }
-        throw fetchError;
-      }
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const errorMessage = errorData.detail || errorData.message || response.statusText;
 
-        // 환경 불일치 에러 (400)
-        if (response.status === 400) {
-          return NextResponse.json(
-            {
-              error: errorMessage,
-              detail: errorData.detail || errorMessage,
-              status: response.status,
-            },
-            { status: response.status }
-          );
-        }
-
-        // 기타 백엔드 오류
         return NextResponse.json(
           {
             error: errorMessage || "백엔드 서버 오류가 발생했습니다.",
@@ -74,41 +52,39 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const data = await response.json();
-      return NextResponse.json({ response: data.response || data.answer });
-    } catch (backendError) {
-      // 백엔드 연결 실패 (서버가 실행되지 않음)
-      console.error("Backend connection error:", backendError);
+      // 스트리밍 응답 처리
+      if (!response.body) {
+        return NextResponse.json(
+          { error: "스트리밍 응답을 받을 수 없습니다." },
+          { status: 500 }
+        );
+      }
 
-      // 타임아웃 에러 확인
-      const causeCode = backendError instanceof Error &&
-        backendError.cause &&
-        typeof backendError.cause === 'object' &&
-        'code' in backendError.cause
-        ? (backendError.cause as { code?: string }).code
-        : undefined;
+      // 백엔드의 text/plain 스트림을 그대로 프론트엔드에 전달
+      return new Response(response.body, {
+        headers: {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
 
-      if (
-        backendError instanceof Error &&
-        (backendError.message.includes("시간이 초과") ||
-          backendError.message.includes("AbortError") ||
-          causeCode === "UND_ERR_HEADERS_TIMEOUT")
-      ) {
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+
+      // 타임아웃 에러
+      if (fetchError instanceof Error && fetchError.name === "AbortError") {
         return NextResponse.json(
           {
-            error: "요청 시간이 초과되었습니다. 모델이 로딩 중이거나 응답 생성에 시간이 오래 걸리고 있습니다. 잠시 후 다시 시도해주세요.",
+            error: "요청 시간이 초과되었습니다. 모델이 로딩 중이거나 응답 생성에 시간이 오래 걸리고 있습니다.",
             status: 504,
           },
           { status: 504 }
         );
       }
 
-      // 네트워크 오류인지 확인
-      if (
-        backendError instanceof TypeError &&
-        (backendError.message.includes("fetch") ||
-          backendError.message.includes("HeadersTimeoutError"))
-      ) {
+      // 네트워크 오류
+      if (fetchError instanceof TypeError) {
         return NextResponse.json(
           {
             error: "백엔드 서버에 연결할 수 없습니다. 백엔드 서비스가 실행 중인지 확인해주세요.",
@@ -120,7 +96,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json(
         {
-          error: `백엔드 서버와 통신 중 오류가 발생했습니다: ${backendError instanceof Error ? backendError.message : "알 수 없는 오류"}`,
+          error: `백엔드 서버와 통신 중 오류가 발생했습니다: ${fetchError instanceof Error ? fetchError.message : "알 수 없는 오류"}`,
           status: 500,
         },
         { status: 500 }

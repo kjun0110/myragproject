@@ -192,7 +192,7 @@ if __name__ == "__main__":
     print()
 
     uvicorn.run(
-        "app.main:app",
+        "app.mainbackup:app",
         host=host,
         port=port,
         reload=True,
