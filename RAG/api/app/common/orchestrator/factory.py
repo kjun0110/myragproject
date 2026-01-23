@@ -103,14 +103,14 @@ class OrchestratorFactory:
 def _register_domain_orchestrators():
     """도메인별 오케스트레이터를 자동으로 등록합니다."""
     try:
-        from app.domains.spam_classifier.orchestrator import SpamClassifierOrchestrator
+        from app.domains.v1.spam_classifier.orchestrator import SpamClassifierOrchestrator
         OrchestratorFactory.register("spam_classifier", SpamClassifierOrchestrator, is_default=True)
         print("[INFO] spam_classifier 오케스트레이터 등록 완료")
     except ImportError as e:
         print(f"[WARNING] spam_classifier 오케스트레이터 로드 실패: {e}")
 
     try:
-        from app.domains.chat.orchestrator import ChatOrchestrator
+        from app.domains.v1.chat.orchestrator import ChatOrchestrator
         OrchestratorFactory.register("chat", ChatOrchestrator)
         print("[INFO] chat 오케스트레이터 등록 완료")
     except ImportError as e:

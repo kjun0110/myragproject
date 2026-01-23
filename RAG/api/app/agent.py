@@ -54,7 +54,7 @@ app.add_middleware(
 )
 
 # 라우터 등록
-from app.routers.mcp_spam_router import router as mcp_router
+from app.routers.v1.mcp_spam_router import router as mcp_router
 
 app.include_router(mcp_router)
 

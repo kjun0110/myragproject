@@ -3,10 +3,14 @@
   "short_name": "LangChain Chat",
   "description": "LangChain을 활용한 챗봇 서비스",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#000000",
-  "orientation": "portrait-primary",
+  "theme_color": "#667eea",
+  "orientation": "any",
+  "categories": ["productivity", "utilities"],
+  "lang": "ko",
+  "dir": "ltr",
   "icons": [
     {
       "src": "/icon-192x192.png",
@@ -20,6 +24,42 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "채팅",
+      "short_name": "채팅",
+      "description": "챗봇과 대화하기",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "스팸 필터",
+      "short_name": "스팸",
+      "description": "스팸 메일 판독기",
+      "url": "/v1/spam",
+      "icons": [
+        {
+          "src": "/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "share_target": {
+    "action": "/",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }
 

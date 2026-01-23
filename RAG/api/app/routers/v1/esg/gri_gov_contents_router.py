@@ -16,13 +16,13 @@ api_dir = app_dir.parent  # api/
 
 sys.path.insert(0, str(api_dir))
 
-from app.domains.esg.total.models.gri_gov_contents_model import (
+from app.domains.v1.esg.total.models.gri_gov_contents_model import (
     GRIGovContentCreate,
     GRIGovContentListResponse,
     GRIGovContentResponse,
     GRIGovContentUpdate,
 )
-from app.domains.esg.total.orchestrator.gri_gov_contents_flow import (
+from app.domains.v1.esg.total.orchestrator.gri_gov_contents_flow import (
     get_gri_gov_contents_orchestrator,
 )
 

@@ -16,13 +16,13 @@ api_dir = app_dir.parent  # api/
 
 sys.path.insert(0, str(api_dir))
 
-from app.domains.esg.total.models.gri_standards_model import (
+from app.domains.v1.esg.total.models.gri_standards_model import (
     GRIStandardCreate,
     GRIStandardListResponse,
     GRIStandardResponse,
     GRIStandardUpdate,
 )
-from app.domains.esg.total.orchestrator.gri_standards_flow import (
+from app.domains.v1.esg.total.orchestrator.gri_standards_flow import (
     get_gri_standards_orchestrator,
 )
 

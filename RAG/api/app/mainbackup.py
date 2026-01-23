@@ -79,7 +79,7 @@ async def startup_event():
 
     # 2. ChatService 초기화
     print("\n2. ChatService 초기화 중...")
-    from app.domains.chat.agents.chat_service import ChatService
+    from app.domains.v1.chat.agents.chat_service import ChatService
 
     chat_service = ChatService(
         connection_string=CONNECTION_STRING,
@@ -110,7 +110,7 @@ async def startup_event():
     # 7. Exaone 모델 사전 로드 (LangGraph용)
     print("\n7. Exaone3.5 모델 사전 로드 중...")
     try:
-        from app.domains.chat.agents.graph import preload_exaone_model
+        from app.domains.v1.chat.agents.graph import preload_exaone_model
 
         preload_exaone_model()
     except Exception as e:
@@ -123,8 +123,8 @@ async def startup_event():
 
 
 # 라우터 등록
-from app.routers.chat_router import router as chat_router
-from app.routers.graph_router import router as graph_router
+from app.routers.v1.chat_router import router as chat_router
+from app.routers.v1.graph_router import router as graph_router
 
 app.include_router(chat_router)
 app.include_router(graph_router)
