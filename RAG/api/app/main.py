@@ -305,6 +305,45 @@ except AttributeError as e:
 except Exception as e:
     logger.error(f"[ERROR] Soccer Player 라우터 등록 실패: {e}")
 
+# Soccer Team 라우터
+try:
+    from app.routers.v10.soccer.team_router import router as team_router  # type: ignore
+
+    app.include_router(team_router)
+    logger.info("[✓] Soccer Team 라우터 등록 완료: /api/v10/soccer/team")
+except ImportError as e:
+    logger.warning(f"[WARNING] Soccer Team 라우터 import 실패: {e}")
+except AttributeError as e:
+    logger.warning(f"[WARNING] Soccer Team 라우터 속성 오류: {e}")
+except Exception as e:
+    logger.error(f"[ERROR] Soccer Team 라우터 등록 실패: {e}")
+
+# Soccer Stadium 라우터
+try:
+    from app.routers.v10.soccer.stadium_router import router as stadium_router  # type: ignore
+
+    app.include_router(stadium_router)
+    logger.info("[✓] Soccer Stadium 라우터 등록 완료: /api/v10/soccer/stadium")
+except ImportError as e:
+    logger.warning(f"[WARNING] Soccer Stadium 라우터 import 실패: {e}")
+except AttributeError as e:
+    logger.warning(f"[WARNING] Soccer Stadium 라우터 속성 오류: {e}")
+except Exception as e:
+    logger.error(f"[ERROR] Soccer Stadium 라우터 등록 실패: {e}")
+
+# Soccer Schedule 라우터
+try:
+    from app.routers.v10.soccer.schedule_router import router as schedule_router  # type: ignore
+
+    app.include_router(schedule_router)
+    logger.info("[✓] Soccer Schedule 라우터 등록 완료: /api/v10/soccer/schedule")
+except ImportError as e:
+    logger.warning(f"[WARNING] Soccer Schedule 라우터 import 실패: {e}")
+except AttributeError as e:
+    logger.warning(f"[WARNING] Soccer Schedule 라우터 속성 오류: {e}")
+except Exception as e:
+    logger.error(f"[ERROR] Soccer Schedule 라우터 등록 실패: {e}")
+
 # 루트 엔드포인트
 @app.get("/")
 async def root():
