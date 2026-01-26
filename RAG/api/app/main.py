@@ -9,6 +9,9 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+# __pycache__ 파일 생성 방지 (가장 먼저 설정)
+os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+
 # 프로젝트 루트를 Python 경로에 추가
 current_file = Path(__file__).resolve()
 app_dir = current_file.parent  # api/app/
@@ -71,6 +74,67 @@ async def lifespan(app):
         except Exception as e:
             logger.warning(f"[WARNING] 데이터베이스 연결 확인 실패: {e}")
 
+        # Alembic 마이그레이션 자동 실행 (Soccer 테이블 생성)
+        # 별도의 동기 엔진을 사용하여 Alembic 실행 (비동기 루프와 분리)
+        try:
+            from alembic.config import Config
+            from alembic import command
+            from pathlib import Path
+            import asyncio
+
+            # Alembic 설정 파일 경로
+            alembic_ini_path = api_dir / "alembic.ini"
+
+            if alembic_ini_path.exists():
+                logger.info("[INFO] Alembic 마이그레이션 시작...")
+
+                # Alembic 설정 로드
+                alembic_cfg = Config(str(alembic_ini_path))
+
+                # script_location을 절대 경로로 설정 (작업 디렉토리 문제 해결)
+                alembic_dir = api_dir / "alembic"
+                alembic_cfg.set_main_option("script_location", str(alembic_dir))
+
+                # 데이터베이스 URL을 동기식으로 변환 (psycopg2 사용)
+                database_url = settings.connection_string
+                # asyncpg -> psycopg2로 변환 (Alembic은 동기 드라이버 필요)
+                if database_url.startswith("postgresql+asyncpg://"):
+                    database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+                elif database_url.startswith("postgresql://"):
+                    pass  # 이미 동기 형식
+                else:
+                    # 다른 형식도 처리
+                    database_url = database_url.replace("+asyncpg", "")
+
+                # Alembic에 동기 URL 설정 (Alembic이 자체적으로 동기 엔진 생성)
+                alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+
+                # 모든 모델 import (metadata에 등록)
+                from app.domains.v10.soccer.bases import Player, Schedule, Stadium, Team
+                logger.info("[INFO] Soccer 모델 로드 완료: Player, Schedule, Stadium, Team")
+
+                # versions 디렉토리에 마이그레이션 파일이 있는지 확인
+                versions_dir = alembic_dir / "versions"
+                existing_migrations = [f for f in versions_dir.glob("*.py") if f.name != "__init__.py" and f.name != ".gitkeep"] if versions_dir.exists() else []
+
+                logger.info(f"[INFO] 기존 마이그레이션 {len(existing_migrations)}개 발견 - 자동 생성 스킵")
+
+                # Alembic 설정을 저장 (yield 이후 백그라운드에서 실행)
+                # 서버 시작을 블로킹하지 않기 위해 yield 이후에 실행
+                alembic_config_data = {
+                    "alembic_cfg": alembic_cfg,
+                    "api_dir": api_dir,
+                }
+                logger.info("[INFO] 마이그레이션은 서버 시작 후 백그라운드에서 실행됩니다.")
+            else:
+                logger.warning(f"[WARNING] Alembic 설정 파일을 찾을 수 없습니다: {alembic_ini_path}")
+        except ImportError:
+            logger.warning("[WARNING] Alembic이 설치되지 않았습니다. 'pip install alembic'을 실행하세요.")
+        except Exception as e:
+            logger.error(f"[ERROR] Alembic 마이그레이션 실행 실패: {e}")
+            import traceback
+            traceback.print_exc()
+
         logger.info("[OK] 서버 초기화 완료!")
         logger.info("=" * 70)
 
@@ -79,10 +143,34 @@ async def lifespan(app):
         import traceback
         traceback.print_exc()
 
-    yield
+    try:
+        yield
 
-    # 종료 시 정리 작업
-    logger.info("서버 종료 중...")
+        # 서버 시작 후 백그라운드에서 Alembic 마이그레이션 실행
+        if 'alembic_config_data' in locals():
+            async def run_alembic_in_background():
+                """서버 시작 후 백그라운드에서 Alembic 마이그레이션 실행"""
+                import os
+                from alembic import command
+                await asyncio.sleep(2)  # 서버가 완전히 시작될 때까지 대기
+                original_cwd = os.getcwd()
+                try:
+                    os.chdir(str(alembic_config_data["api_dir"]))
+                    logger.info("[INFO] 백그라운드에서 Alembic 마이그레이션 시작...")
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(None, command.upgrade, alembic_config_data["alembic_cfg"], "head")
+                    logger.info("[✓] Alembic 마이그레이션 적용 완료 (Soccer 테이블 생성됨)")
+                except Exception as e:
+                    logger.error(f"[ERROR] Alembic 마이그레이션 실행 중 오류: {e}")
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    os.chdir(original_cwd)
+
+            asyncio.create_task(run_alembic_in_background())
+    finally:
+        # 종료 시 정리 작업
+        logger.info("서버 종료 중...")
 
 
 # fastapi 인스턴스 생성
@@ -204,6 +292,19 @@ try:
 except (ImportError, AttributeError):
     pass
 
+# Soccer Player 라우터
+try:
+    from app.routers.v10.soccer.player_router import router as player_router  # type: ignore
+
+    app.include_router(player_router)
+    logger.info("[✓] Soccer Player 라우터 등록 완료: /api/v10/soccer/player")
+except ImportError as e:
+    logger.warning(f"[WARNING] Soccer Player 라우터 import 실패: {e}")
+except AttributeError as e:
+    logger.warning(f"[WARNING] Soccer Player 라우터 속성 오류: {e}")
+except Exception as e:
+    logger.error(f"[ERROR] Soccer Player 라우터 등록 실패: {e}")
+
 # 루트 엔드포인트
 @app.get("/")
 async def root():
@@ -243,10 +344,14 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn  # type: ignore
 
+    # 작업 디렉토리 기준으로 api 디렉토리만 감시
+    # python -m api.app.main 실행 시 프로젝트 루트(RAG/)에서 실행됨
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
         log_level="info",
+        reload_dirs=["api/app"],  # api/app 디렉토리만 감시 (프론트엔드 제외)
+        reload_excludes=["**/__pycache__/**", "**/*.pyc", "**/*.pyo", "**/*.log"],
     )

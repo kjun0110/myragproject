@@ -54,7 +54,7 @@ export default function SpamPage() {
 
       let response: Response;
       try {
-        response = await fetch("/api/v1/spam-analyze", {
+        response = await fetch("/v1/api/spam-analyze", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

@@ -50,20 +50,7 @@ export default function StudyPage() {
 
   // 파일 업로드 버튼 클릭 핸들러
   const handleUploadClick = () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.multiple = true;
-    input.accept = "*/*";
-    input.onchange = (e) => {
-      const target = e.target as HTMLInputElement;
-      if (target.files && target.files.length > 0) {
-        const fileArray = Array.from(target.files);
-        setUploadedFiles((prev) => [...prev, ...fileArray]);
-        console.log("업로드된 파일:", fileArray.map((f) => f.name));
-        // TODO: 실제 파일 업로드 로직 구현 (API 호출 등)
-      }
-    };
-    input.click();
+    router.push("/v10/admin/upload");
   };
 
   // 파일 삭제 핸들러

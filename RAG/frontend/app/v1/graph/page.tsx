@@ -45,7 +45,7 @@ export default function GraphPage() {
     setIsLoading(true);
 
     try {
-      const apiEndpoint = "/api/v1/graph";
+      const apiEndpoint = "/v1/api/graph";
       const requestBody = {
         message: content,
         history: messages.map((m) => ({

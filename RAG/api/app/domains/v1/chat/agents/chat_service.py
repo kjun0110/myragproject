@@ -172,25 +172,25 @@ class ChatService:
             print("[WARNING] OpenAI API 키가 설정되지 않았습니다.")
             self.openai_llm = None
 
-        # 로컬 Midm LLM 초기화 (LLM_PROVIDER가 midm인 경우에만)
+        # 로컬 EXAONE LLM 초기화 (LLM_PROVIDER가 midm 또는 exaone인 경우)
         llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
-        if llm_provider == "midm":
+        if llm_provider in ["midm", "exaone"]:  # midm은 호환성을 위해 exaone으로 매핑
             try:
-                from .model_loader import load_midm_model_for_service
+                from .model_loader import load_midm_model_for_service  # 실제로는 EXAONE 로드
 
                 self.local_llm = load_midm_model_for_service(
                     model_path=self.model_name_or_path
                 )
             except Exception as local_error:
                 error_msg = str(local_error)
-                print(f"[WARNING] 로컬 Midm 모델 초기화 실패: {error_msg[:200]}...")
+                print(f"[WARNING] 로컬 EXAONE 모델 초기화 실패: {error_msg[:200]}...")
                 import traceback
 
                 print(f"[DEBUG] 상세 오류: {traceback.format_exc()[:500]}")
                 self.local_llm = None
         else:
             print(
-                f"[INFO] LLM_PROVIDER={llm_provider} - Midm 모델을 로드하지 않습니다."
+                f"[INFO] LLM_PROVIDER={llm_provider} - EXAONE 모델을 로드하지 않습니다."
             )
             self.local_llm = None
 
@@ -200,7 +200,7 @@ class ChatService:
             print(
                 "[INFO] 서버는 시작되지만, RAG 기능을 사용하려면 최소 하나의 LLM 모델이 필요합니다."
             )
-            print("[INFO] OpenAI API 키를 설정하거나 로컬 Midm 모델을 확인해주세요.")
+            print("[INFO] OpenAI API 키를 설정하거나 로컬 EXAONE 모델을 확인해주세요.")
             # RuntimeError를 발생시키지 않고 경고만 출력
             # 서버는 시작되지만 RAG 체인은 초기화되지 않음
 
@@ -325,7 +325,7 @@ class ChatService:
         # 모델 타입 정규화
         if model_type:
             model_type = model_type.lower()
-        if model_type == "midm":
+        if model_type in ["midm", "exaone"]:  # midm은 호환성을 위해 local로 매핑
             model_type = "local"
 
         # 적절한 RAG 체인 선택

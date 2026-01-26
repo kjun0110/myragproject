@@ -46,7 +46,7 @@ export default function ChainPage() {
     setIsLoading(true);
 
     try {
-      const apiEndpoint = "/api/v1/chat";
+      const apiEndpoint = "/v1/api/chat";
       const requestBody = {
         message: content,
         history: messages.map((m) => ({

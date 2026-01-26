@@ -28,7 +28,7 @@ async def graph_chat(request: GraphRequest, http_request: Request):
         or (client_host and client_host.startswith("127."))
     )
 
-    # 로컬 환경이 아니면 에러 (graph는 로컬 midm 모델 사용)
+    # 로컬 환경이 아니면 에러 (graph는 로컬 EXAONE 모델 사용)
     if not is_localhost:
         raise HTTPException(
             status_code=400,

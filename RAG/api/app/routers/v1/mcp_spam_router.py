@@ -51,8 +51,11 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 async def spam_gate(request: GateRequest):
     """KoELECTRA 게이트웨이 API 엔드포인트.
 
-    KoELECTRA로 도메인 분류만 수행합니다.
-    스팸 분류 도메인으로 분류되면 EXAONE이 자동으로 호출됩니다.
+    중요: KoELECTRA는 스팸 판단을 하지 않습니다!
+    - KoELECTRA의 역할: 정책 결정만 (정책 기반 vs 규칙 기반)
+    - EXAONE의 역할: 실제 스팸 판단 (스팸 확률, 레이블, 분석)
+    
+    KoELECTRA는 정책 결정만 수행하며, 스팸 분류 도메인으로 분류되면 EXAONE이 호출됩니다.
     """
     try:
         # 도메인별 오케스트레이터 사용
@@ -153,60 +156,38 @@ async def list_gate_states_endpoint():
 async def spam_analyze_with_tool(request: SpamAnalyzeRequest):
     """스팸 분석 API 엔드포인트.
 
-    /spam 페이지에서 직접 호출되는 엔드포인트로,
-    KoELECTRA 게이트웨이를 건너뛰고 EXAONE이 직접 스팸 확률 계산 및 판단을 수행합니다.
-    신뢰도 관계없이 모든 판독은 EXAONE이 담당합니다.
+    오케스트레이터를 사용하여 KoELECTRA 정책 결정 → EXAONE 스팸 판단 순서로 분석을 수행합니다.
+    
+    중요:
+    - KoELECTRA: 정책 결정만 (정책 기반 vs 규칙 기반)
+    - EXAONE: 실제 스팸 판단 (스팸 확률, 레이블, 분석)
+    
+    플로우:
+    1. KoELECTRA로 정책 결정 (spam_prob > 0.3 → ANALYZE_SPAM)
+    2. ANALYZE_SPAM 정책이면 EXAONE으로 스팸 판단 수행
+    3. BYPASS 정책이면 규칙 기반 처리 (EXAONE 호출 안 함)
     """
     try:
-        # /spam 페이지에서는 KoELECTRA를 건너뛰고 바로 EXAONE 호출
-        # 신뢰도 관계없이 모든 판독은 EXAONE이 담당
-        import json
-
-        from app.domains.v1.spam_classifier.agents import get_exaone_tool
-
-        print("[INFO] /spam 페이지 요청 → EXAONE 직접 호출 (KoELECTRA 건너뛰기)...")
-        exaone_tool = get_exaone_tool()
-        exaone_result_str = exaone_tool.invoke({"email_text": request.email_text})
-
-        # JSON 문자열 파싱
-        try:
-            exaone_result = json.loads(exaone_result_str)
-        except (json.JSONDecodeError, TypeError):
-            exaone_result = {"analysis": exaone_result_str}
-
-        # gate_result는 참고용으로 생성 (실제로는 EXAONE이 판단)
-        gate_result = {
-            "domain": "spam",  # /spam 페이지에서는 항상 spam 도메인으로 간주
-            "policy": "ANALYZE_SPAM",  # KoELECTRA를 건너뛰므로 정책은 명시적으로 ANALYZE_SPAM
-            "confidence": "high",
-            "latency_ms": 0.0,  # 게이트웨이를 건너뛰므로 0
-            "spam_prob": exaone_result.get("spam_prob", 0.5)
-            if isinstance(exaone_result, dict)
-            else 0.5,
-            "ham_prob": exaone_result.get("ham_prob", 0.5)
-            if isinstance(exaone_result, dict)
-            else 0.5,
-        }
-
-        # 최종 결정 생성 (EXAONE이 전부 수행)
-        if isinstance(exaone_result, dict):
-            spam_prob = exaone_result.get("spam_prob", 0.5)
-            label = exaone_result.get("label", "unknown")
-            confidence = exaone_result.get("confidence", "medium")
-            analysis = exaone_result.get("analysis", "")
-
-            final_decision = f"""EXAONE Reader 스팸 분석:
-- 스팸 확률: {spam_prob:.4f}
-- 레이블: {label}
-- 신뢰도: {confidence}
-- 상세 분석:
-{analysis}"""
-        else:
-            final_decision = f"EXAONE Reader 스팸 분석:\n{exaone_result}"
-
+        # 오케스트레이터를 사용하여 전체 플로우 실행
+        orchestrator = get_spam_orchestrator()
+        
+        print("[INFO] /spam 페이지 요청 → 오케스트레이터 실행")
+        print("[INFO] 1단계: KoELECTRA 정책 결정 (스팸 판단 아님)")
+        print("[INFO] 2단계: 정책에 따라 EXAONE 스팸 판단 또는 규칙 기반 처리")
+        result = orchestrator.analyze(email_text=request.email_text)
+        
+        # 오케스트레이터 결과 파싱
+        gate_result = result.get("gate_result", {})
+        agent_result = result.get("agent_result")
+        service_result = result.get("service_result")
+        final_decision = result.get("final_decision", "")
+        
+        # exaone_result는 agent_result에서 추출
+        exaone_result = agent_result if agent_result else None
+        
         return SpamAnalyzeResponse(
             gate_result=gate_result,
-            exaone_result=exaone_result,  # 이미 dict 형태로 파싱됨
+            exaone_result=exaone_result,
             final_decision=final_decision,
         )
 

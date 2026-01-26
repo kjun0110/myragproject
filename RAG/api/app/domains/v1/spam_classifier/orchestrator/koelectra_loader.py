@@ -8,10 +8,6 @@ import sys
 from pathlib import Path
 from typing import Tuple
 
-import torch
-from peft import PeftModel
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
 # 프로젝트 루트를 Python 경로에 추가
 current_file = Path(__file__).resolve()
 orchestrator_dir = current_file.parent  # api/app/domains/spam_classifier/orchestrator/
@@ -21,6 +17,9 @@ app_dir = domains_dir.parent  # api/app/
 api_dir = app_dir.parent  # api/
 
 sys.path.insert(0, str(api_dir))
+
+# 공통 모델 로더 사용
+from app.common.loaders import load_koelectra_with_spam_adapter
 
 # 전역 캐싱
 _koelectra_model = None
@@ -53,48 +52,9 @@ def load_koelectra_gate() -> Tuple:
     try:
         print("[INFO] KoELECTRA 게이트웨이 모델 로딩 시작...")
 
-        # Base 모델 경로
-        model_dir = (
-            api_dir / "artifacts" / "koelectra" / "koelectra-small-v3-discriminator"
-        )
-        if model_dir.exists() and (model_dir / "config.json").exists():
-            base_model_path = str(model_dir)
-        else:
-            base_model_path = "monologg/koelectra-small-v3-discriminator"
+        # 공통 모델 로더 사용 (HuggingFace 캐시 + 로컬 아답터)
+        _koelectra_model, _koelectra_tokenizer = load_koelectra_with_spam_adapter()
 
-        # LoRA 어댑터 경로
-        lora_dir = (
-            api_dir
-            / "artifacts"
-            / "koelectra"
-            / "spam_adapter"
-            / "koelectra-small-v3-discriminator-spam-lora"
-        )
-        lora_adapter_path = None
-        if lora_dir.exists():
-            subdirs = [d for d in lora_dir.iterdir() if d.is_dir()]
-            if subdirs:
-                lora_adapter_path = str(max(subdirs, key=lambda x: x.stat().st_mtime))
-            else:
-                lora_adapter_path = str(lora_dir)
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[INFO] 디바이스: {device}")
-
-        # 토크나이저 로드
-        _koelectra_tokenizer = AutoTokenizer.from_pretrained(base_model_path)
-
-        # Base 모델 로드
-        base_model = AutoModelForSequenceClassification.from_pretrained(base_model_path)
-        base_model.to(device)
-
-        # LoRA 어댑터 로드 (있는 경우)
-        if lora_adapter_path:
-            _koelectra_model = PeftModel.from_pretrained(base_model, lora_adapter_path)
-        else:
-            _koelectra_model = base_model
-
-        _koelectra_model.eval()
         print("[OK] KoELECTRA 게이트웨이 모델 로드 완료")
         _koelectra_loading = False
         _koelectra_error = None

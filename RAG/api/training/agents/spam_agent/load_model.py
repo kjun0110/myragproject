@@ -31,28 +31,11 @@ def load_exaone_model():
     print("EXAONE-2.4B 모델 로드 (4-bit 양자화)")
     print("=" * 60)
 
-    # 모델 경로 결정 (artifacts 디렉토리 사용)
-    # 실제 경로: api/artifacts/exaone/exaone3.5-2.4b
-    model_dir = api_dir / "artifacts" / "exaone" / "exaone3.5-2.4b"
+    # 공통 모델 로더 사용 (HuggingFace 캐시 활용)
+    from app.common.loaders import ModelLoader
 
-    if model_dir.exists() and (model_dir / "config.json").exists():
-        model_path = str(model_dir)
-        print(f"\n[INFO] 로컬 모델 경로: {model_path}")
-    else:
-        # HuggingFace 모델 ID 사용 (하지만 이 모델은 private이므로 로컬 모델이 필요함)
-        model_path = "ai-datacenter/exaone-2.4b"
-        print("\n[WARNING] 로컬 모델을 찾을 수 없습니다.")
-        print("  확인한 경로:")
-        print(f"    - {api_dir / 'artifacts' / 'exaone' / 'exaone3.5-2.4b'}")
-        print(
-            "\n[ERROR] EXAONE 모델은 private repository이므로 로컬 모델이 필요합니다."
-        )
-        print("  모델을 다음 경로에 배치하세요:")
-        print(f"    - {api_dir / 'artifacts' / 'exaone' / 'exaone3.5-2.4b'}")
-        raise FileNotFoundError(
-            f"EXAONE 모델을 찾을 수 없습니다. "
-            f"로컬 모델 경로를 확인하세요: {api_dir / 'artifacts' / 'exaone' / 'exaone3.5-2.4b'}"
-        )
+    print("\n[INFO] HuggingFace 캐시를 활용하여 베이스 모델 로드")
+    print(f"[INFO] 모델 ID: {ModelLoader.EXAONE_MODEL_ID}")
 
     # GPU 사용 가능 여부 확인
     if torch.cuda.is_available():
@@ -63,49 +46,21 @@ def load_exaone_model():
     else:
         print("[WARNING] GPU를 사용할 수 없습니다. CPU로 로드됩니다.")
 
-    # 4-bit 양자화 설정
-    print("\n[INFO] 4-bit 양자화 설정 중...")
-    quantization_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_use_double_quant=True,
-    )
-    print("[OK] 양자화 설정 완료")
-
-    # 토크나이저 로드
-    print("\n[INFO] 토크나이저 로드 중...")
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            trust_remote_code=True,
-        )
-
-        # pad_token 설정
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-            tokenizer.pad_token_id = tokenizer.eos_token_id
-
-        print("[OK] 토크나이저 로드 완료")
-        print(f"  - Vocab size: {tokenizer.vocab_size}")
-        print(f"  - Pad token: {tokenizer.pad_token}")
-        print(f"  - EOS token: {tokenizer.eos_token}")
-    except Exception as e:
-        print(f"[ERROR] 토크나이저 로드 실패: {e}")
-        raise
-
-    # 모델 로드 (4-bit 양자화 적용)
+    # 모델 로드 (아답터 없이 베이스 모델만)
     print("\n[INFO] 모델 로드 중 (4-bit 양자화)...")
     print("  이 과정은 몇 분이 걸릴 수 있습니다...")
 
     try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            quantization_config=quantization_config,
-            device_map="auto",  # GPU 자동 할당
+        model, tokenizer = ModelLoader.load_exaone_model(
+            adapter_name=None,  # 학습용이므로 아답터 없이
+            use_quantization=True,
+            device_map="auto",
             trust_remote_code=True,
         )
         print("[OK] 모델 로드 완료")
+        print(f"  - Vocab size: {tokenizer.vocab_size}")
+        print(f"  - Pad token: {tokenizer.pad_token}")
+        print(f"  - EOS token: {tokenizer.eos_token}")
     except Exception as e:
         print(f"[ERROR] 모델 로드 실패: {e}")
         import traceback

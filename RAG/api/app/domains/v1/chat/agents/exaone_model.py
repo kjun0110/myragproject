@@ -28,7 +28,7 @@ class ExaoneLLM(BaseLLM):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        model_id: str = "ai-datacenter/exaone-2.4b",
+        model_id: str = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
         device_map: str = "auto",
         dtype: str = "auto",
         trust_remote_code: bool = True,
@@ -48,17 +48,12 @@ class ExaoneLLM(BaseLLM):
         self.dtype = dtype
         self.trust_remote_code = trust_remote_code
 
-        # 모델 경로 결정 (로컬 경로 우선)
+        # 모델 경로 결정 (HuggingFace 캐시 우선 사용)
         if model_path and Path(model_path).exists():
             self._load_path = model_path
         else:
-            # api/artifacts/exaone/exaone3.5-2.4b 확인
-            exaone_dir = api_dir / "artifacts" / "exaone" / "exaone3.5-2.4b"
-
-            if exaone_dir.exists() and (exaone_dir / "config.json").exists():
-                self._load_path = str(exaone_dir)
-            else:
-                self._load_path = model_id
+            # HuggingFace 캐시 사용 (model_id 사용)
+            self._load_path = model_id
 
         self.model = None
         self.tokenizer = None
@@ -69,29 +64,19 @@ class ExaoneLLM(BaseLLM):
         if self.model is not None:
             return
 
-        print(f"[INFO] Exaone 모델 로드 중: {self._load_path}")
+        print(f"[INFO] Exaone 모델 로드 중...")
 
-        # 토크나이저 로드
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self._load_path,
-            trust_remote_code=self.trust_remote_code,
-        )
+        # 공통 모델 로더 사용 (HuggingFace 캐시 활용)
+        from app.common.loaders import ModelLoader
 
-        # dtype 설정 (torch_dtype 대신 dtype 사용)
-        if self.dtype == "auto":
-            dtype_value = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-        elif self.dtype == "float16":
-            dtype_value = torch.float16
-        elif self.dtype == "bfloat16":
-            dtype_value = torch.bfloat16
-        else:
-            dtype_value = torch.float32
+        # 양자화 여부 결정
+        use_quantization = self.dtype in ["auto", "float16", "bfloat16"]
 
-        # 모델 로드 (dtype 파라미터 사용, torch_dtype은 deprecated)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self._load_path,
+        # 아답터 없이 베이스 모델만 로드
+        self.model, self.tokenizer = ModelLoader.load_exaone_model(
+            adapter_name=None,
+            use_quantization=use_quantization,
             device_map=self.device_map,
-            dtype=dtype_value,
             trust_remote_code=self.trust_remote_code,
         )
 

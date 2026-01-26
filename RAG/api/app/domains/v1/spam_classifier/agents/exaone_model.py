@@ -28,7 +28,7 @@ class ExaoneLLM(BaseLLM):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        model_id: str = "ai-datacenter/exaone-2.4b",
+        model_id: Optional[str] = None,
         device_map: str = "auto",
         dtype: str = "auto",
         trust_remote_code: bool = True,
@@ -45,23 +45,25 @@ class ExaoneLLM(BaseLLM):
             adapter_path: LoRA 어댑터 경로 (None이면 어댑터 없이 로드)
         """
         self.model_path = model_path
-        self.model_id = model_id
+        # model_id가 제공되지 않으면 ModelLoader의 기본 모델 ID 사용
+        if model_id is None:
+            from app.common.loaders import ModelLoader
+            self.model_id = ModelLoader.EXAONE_MODEL_ID
+        else:
+            self.model_id = model_id
         self.device_map = device_map
         self.dtype = dtype
         self.trust_remote_code = trust_remote_code
         self.adapter_path = adapter_path
 
-        # 모델 경로 결정 (로컬 경로 우선)
+        # 모델 경로 결정 (HuggingFace 캐시 우선)
+        # model_path가 명시적으로 제공되고 존재하면 사용, 아니면 HuggingFace 모델 ID 사용
         if model_path and Path(model_path).exists():
             self._load_path = model_path
         else:
-            # api/artifacts/exaone/exaone3.5-2.4b 확인 (실제 경로)
-            exaone_dir = api_dir / "artifacts" / "exaone" / "exaone3.5-2.4b"
-
-            if exaone_dir.exists() and (exaone_dir / "config.json").exists():
-                self._load_path = str(exaone_dir)
-            else:
-                self._load_path = model_id
+            # HuggingFace 캐시 사용 (로컬 경로 검색 제거)
+            # ModelLoader가 HuggingFace 모델 ID를 사용하여 캐시에서 로드
+            self._load_path = self.model_id  # HuggingFace 모델 ID 사용
 
         self.model = None
         self.tokenizer = None
@@ -72,43 +74,26 @@ class ExaoneLLM(BaseLLM):
         if self.model is not None:
             return
 
-        print(f"[INFO] Exaone 모델 로드 중: {self._load_path}")
+        print(f"[INFO] Exaone 모델 로드 중...")
 
-        # 토크나이저 로드
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self._load_path,
-            trust_remote_code=self.trust_remote_code,
-        )
+        # 공통 모델 로더 사용 (HuggingFace 캐시 활용)
+        from app.common.loaders import ModelLoader
 
-        # dtype 설정 (torch_dtype 대신 dtype 사용)
-        if self.dtype == "auto":
-            dtype_value = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-        elif self.dtype == "float16":
-            dtype_value = torch.float16
-        elif self.dtype == "bfloat16":
-            dtype_value = torch.bfloat16
+        # 양자화 여부 결정
+        use_quantization = self.dtype in ["auto", "float16", "bfloat16"]
+
+        # adapter_path가 있으면 스팸 아답터 로드, 없으면 베이스 모델만
+        if self.adapter_path:
+            adapter_name = "exaone3.5-2.4b-spam-lora"
         else:
-            dtype_value = torch.float32
+            adapter_name = None
 
-        # Base 모델 로드 (dtype 파라미터 사용, torch_dtype은 deprecated)
-        base_model = AutoModelForCausalLM.from_pretrained(
-            self._load_path,
+        self.model, self.tokenizer = ModelLoader.load_exaone_model(
+            adapter_name=adapter_name,
+            use_quantization=use_quantization,
             device_map=self.device_map,
-            dtype=dtype_value,
             trust_remote_code=self.trust_remote_code,
         )
-
-        # LoRA 어댑터가 있으면 로드
-        if self.adapter_path and Path(self.adapter_path).exists():
-            print(f"[INFO] LoRA 어댑터 로드 중: {self.adapter_path}")
-            from peft import PeftModel
-
-            self.model = PeftModel.from_pretrained(base_model, self.adapter_path)
-            print("[OK] LoRA 어댑터 로드 완료")
-        else:
-            self.model = base_model
-            if self.adapter_path:
-                print(f"[WARNING] 어댑터 경로를 찾을 수 없습니다: {self.adapter_path}")
 
         print("[OK] Exaone 모델 로드 완료")
 

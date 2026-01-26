@@ -71,22 +71,12 @@ def load_exaone_model(
     try:
         print("[INFO] EXAONE Reader 모델 로딩 시작...")
 
-        # 모델 경로 해석
+        # HuggingFace 캐시 사용 (로컬 경로 검색 제거)
+        # model_path가 명시적으로 제공되지 않으면 None으로 설정하여
+        # ExaoneLLM이 HuggingFace 모델 ID를 사용하도록 함
         if model_path is None:
-            # 실제 디렉토리 이름: exaone3.5-2.4b (하이픈 포함)
-            # 실제 경로: artifacts/exaone/exaone3.5-2.4b
-            default_path = Path(
-                "artifacts/exaone/exaone3.5-2.4b"
-            )  # api/ 기준 상대 경로
-            model_path = resolve_model_path(
-                "EXAONE_MODEL_DIR", default_path=default_path
-            )
-
-            if model_path is None:
-                raise FileNotFoundError(
-                    f"Exaone 모델을 찾을 수 없습니다. "
-                    f"예상 경로: {default_path} 또는 EXAONE_MODEL_DIR 환경 변수를 설정하세요."
-                )
+            print("[INFO] HuggingFace 캐시에서 EXAONE 모델 로드 (로컬 경로 검색 건너뛰기)")
+            model_path = None  # None으로 설정하면 ExaoneLLM이 model_id 사용
 
         # 어댑터 경로 해석 (없으면 자동 탐색)
         if adapter_path is None:
@@ -113,9 +103,10 @@ def load_exaone_model(
         # EXAONE 모델 구현체 로드
         from .exaone_model import ExaoneLLM
 
-        print(f"[INFO] Exaone 모델 로딩 시작: {model_path}")
+        # model_path=None이면 ExaoneLLM이 HuggingFace 모델 ID 사용
+        print(f"[INFO] Exaone 모델 로딩 시작 (HuggingFace 캐시 사용)")
         exaone_model = ExaoneLLM(
-            model_path=model_path,
+            model_path=model_path,  # None이면 HuggingFace 모델 ID 사용
             device_map=device_map,
             dtype=dtype,
             trust_remote_code=trust_remote_code,

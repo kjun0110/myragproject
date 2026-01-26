@@ -4,59 +4,69 @@
 ERD 기반 SQLAlchemy 모델 정의.
 """
 
-from sqlalchemy import Column, String, ForeignKey
+from sqlalchemy import Column, String, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.domains.v10.shared.bases.base import Base
 
 
 class Team(Base):
-    """팀 테이블 모델.
-
+    """
+    팀(Team) 모델 클래스.
+    
+    축구 팀의 기본 정보, 역사, 홈 경기장, 주소, 연락처, 소유자 정보를 저장하는 SQLAlchemy 모델입니다.
+    
     Attributes:
-        team_id: 팀 ID (Primary Key)
-        stadium_id: 경기장 ID (Foreign Key -> Stadium)
+        id: 팀 고유 ID (BigInteger, Primary Key)
+        stadium_id: 경기장 ID (Foreign Key -> stadium.id)
+        team_code: 팀 코드
         region_name: 지역명
-        team_name: 팀 이름
-        e_team_name: 영문 팀 이름
-        orig_yyyy: 창단년도
-        zip_code1: 우편번호1
-        zip_code2: 우편번호2
-        address: 주소
+        team_name: 팀 이름 (한글)
+        e_team_name: 팀 영문 이름
+        orig_yyyy: 창단 연도 (YYYY 형식)
+        stadium_code: 홈 경기장 코드
+        zip_code1: 우편번호 앞자리
+        zip_code2: 우편번호 뒷자리
+        address: 팀 주소
         ddd: 지역번호
         tel: 전화번호
         fax: 팩스번호
-        homepage: 홈페이지
+        homepage: 홈페이지 URL
         owner: 구단주
     """
 
+
     __tablename__ = "team"
 
-    # Primary Key
-    team_id = Column(String(10), primary_key=True, comment="팀 ID")
+    # 기본 키
+    id = Column(BigInteger, primary_key=True, nullable=False)  # 팀 고유 ID (BigInt 타입)
 
-    # Foreign Key
-    stadium_id = Column(
-        String(10),
-        ForeignKey("stadium.stadium_id", ondelete="SET NULL", onupdate="CASCADE"),
-        nullable=True,
-        comment="경기장 ID"
-    )
+    # 외래 키
+    stadium_id = Column(BigInteger, nullable=True)  # 경기장 ID (FK -> stadium.id)
 
-    # Attributes
-    region_name = Column(String(10), nullable=True, comment="지역명")
-    team_name = Column(String(40), nullable=False, comment="팀 이름")
-    e_team_name = Column(String(50), nullable=True, comment="영문 팀 이름")
-    orig_yyyy = Column(String(10), nullable=True, comment="창단년도")
-    zip_code1 = Column(String(10), nullable=True, comment="우편번호1")
-    zip_code2 = Column(String(10), nullable=True, comment="우편번호2")
-    address = Column(String(80), nullable=True, comment="주소")
-    ddd = Column(String(10), nullable=True, comment="지역번호")
-    tel = Column(String(10), nullable=True, comment="전화번호")
-    fax = Column(String(10), nullable=True, comment="팩스번호")
-    homepage = Column(String(50), nullable=True, comment="홈페이지")
-    owner = Column(String(10), nullable=True, comment="구단주")
+    # 팀 기본 정보
+    team_code = Column(String, nullable=False)  # 팀 코드 (예: K05, K08, K03)
+    region_name = Column(String, nullable=False)  # 지역명 (예: 전북, 성남, 포항)
+    team_name = Column(String, nullable=False)  # 팀 이름 (한글, 예: 현대모터스, 일화천마)
+    e_team_name = Column(String, nullable=True)  # 팀 영문 이름
 
-    # Relationships
-    stadium = relationship("Stadium", back_populates="teams")
-    players = relationship("Player", back_populates="team", cascade="all, delete-orphan")
+    # 팀 역사
+    orig_yyyy = Column(String, nullable=True)  # 창단 연도 (YYYY 형식)
+
+    # 홈 경기장 정보
+    stadium_code = Column(String, nullable=True)  # 홈 경기장 코드
+
+    # 주소 정보
+    zip_code1 = Column(String, nullable=True)  # 우편번호 앞자리
+    zip_code2 = Column(String, nullable=True)  # 우편번호 뒷자리
+    address = Column(String, nullable=True)  # 팀 주소
+
+    # 연락처 정보
+    ddd = Column(String, nullable=True)  # 지역번호 (예: 063, 031, 054)
+    tel = Column(String, nullable=True)  # 전화번호
+    fax = Column(String, nullable=True)  # 팩스번호
+    homepage = Column(String, nullable=True)  # 홈페이지 URL
+
+    # 소유자 정보
+    owner = Column(String, nullable=True)  # 구단주
+

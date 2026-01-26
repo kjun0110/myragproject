@@ -125,9 +125,11 @@ async def startup_event():
 # 라우터 등록
 from app.routers.v1.chat_router import router as chat_router
 from app.routers.v1.graph_router import router as graph_router
+from app.routers.v1.mcp_spam_router import router as mcp_spam_router
 
 app.include_router(chat_router)
 app.include_router(graph_router)
+app.include_router(mcp_spam_router)  # prefix는 이미 router에 정의됨 (/api/mcp)
 
 
 @app.get("/")

@@ -28,37 +28,24 @@ def load_koelectra_model():
     print("KoElectra-small-v3-discriminator 모델 로드")
     print("=" * 60)
 
-    # 모델 경로 결정 (artifacts 디렉토리 사용)
-    # 실제 경로: api/artifacts/koelectra/koelectra-small-v3-discriminator
-    model_dir = api_dir / "artifacts" / "koelectra" / "koelectra-small-v3-discriminator"
+    # 공통 모델 로더 사용 (HuggingFace 캐시 활용)
+    from app.common.loaders import ModelLoader
 
-    if model_dir.exists() and (model_dir / "config.json").exists():
-        model_path = str(model_dir)
-        print(f"\n[INFO] 로컬 모델 경로: {model_path}")
-    else:
-        # HuggingFace 모델 ID 사용
-        model_path = "monologg/koelectra-small-v3-discriminator"
-        print(f"\n[INFO] 로컬 모델을 찾을 수 없어 HuggingFace 모델을 사용합니다: {model_path}")
+    print("\n[INFO] HuggingFace 캐시를 활용하여 베이스 모델 로드")
+    print(f"[INFO] 모델 ID: {ModelLoader.KOELECTRA_MODEL_ID}")
 
     # GPU 사용 가능 여부 확인
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"\n[INFO] 디바이스: {device}")
 
-    # 토크나이저 로드
-    print("\n[INFO] 토크나이저 로드 중...")
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_path)
-        print("[OK] 토크나이저 로드 완료")
-    except Exception as e:
-        print(f"[ERROR] 토크나이저 로드 실패: {e}")
-        raise
-
-    # 모델 로드
+    # 모델 로드 (아답터 없이 베이스 모델만)
     print("\n[INFO] 모델 로드 중...")
     try:
-        model = AutoModelForSequenceClassification.from_pretrained(model_path)
-        model.to(device)
-        model.eval()
+        model, tokenizer = ModelLoader.load_koelectra_model(
+            adapter_name=None,  # 학습용이므로 아답터 없이
+            device=device,
+            num_labels=2,
+        )
         print("[OK] 모델 로드 완료")
     except Exception as e:
         print(f"[ERROR] 모델 로드 실패: {e}")

@@ -21,21 +21,36 @@ router = APIRouter(prefix="/api", tags=["chat"])
 def get_chat_service():
     """ChatService 인스턴스를 반환하는 함수.
 
-    이 함수는 main.py의 전역 변수에 접근하기 위해
+    이 함수는 main.py 또는 mainbackup.py의 전역 변수에 접근하기 위해
     main 모듈에서 import하여 사용합니다.
     순환 import 방지를 위해 함수 내부에서 import합니다.
     """
     # 순환 import 방지를 위해 함수 내부에서 import
     import sys
+    import importlib
 
-    # main 모듈이 이미 로드되어 있는지 확인
-    if "app.main" in sys.modules:
+    # main 또는 mainbackup 모듈 찾기
+    main = None
+    
+    # app.mainbackup이 로드되어 있으면 사용 (우선순위)
+    if "app.mainbackup" in sys.modules:
+        main = importlib.import_module("app.mainbackup")
+    # app.main이 로드되어 있으면 사용
+    elif "app.main" in sys.modules:
         from ... import main
     else:
-        # 모듈이 아직 로드되지 않은 경우 직접 import
-        import importlib
+        # 둘 다 없으면 mainbackup 우선 시도
+        try:
+            main = importlib.import_module("app.mainbackup")
+        except ImportError:
+            # mainbackup이 없으면 main 시도
+            main = importlib.import_module("app.main")
 
-        main = importlib.import_module("app.main")
+    if main is None or not hasattr(main, "chat_service"):
+        raise RuntimeError(
+            "ChatService가 초기화되지 않았습니다. "
+            "main.py 또는 mainbackup.py에서 chat_service를 초기화해주세요."
+        )
 
     return main.chat_service
 
@@ -85,15 +100,20 @@ async def chat(request: ChatRequest, http_request: Request):
     )
 
     try:
-        # graph 모드일 때는 LangGraph 사용 (Exaone 모델)
-        if model_type == "graph":
-            print("[DEBUG] graph 모드 감지 - LangGraph (Exaone) 사용")
-            from app.domains.v1.chat.agents.graph import run_once
+        # graph 모드 또는 local 모드일 때는 LangGraph 사용 (Exaone 모델)
+        # LangChain RAG 체인 대신 LangGraph로 통일
+        if model_type in ["graph", "local"]:
+            print(f"[DEBUG] {model_type} 모드 감지 - LangGraph (Exaone) 사용")
+            from app.domains.v1.chat.agents.graph import run_once_with_history
 
-            response_text = run_once(request.message)
+            # LangGraph 실행 (EXAONE 모델 직접 사용, 대화 기록 포함)
+            response_text = run_once_with_history(
+                user_message=request.message,
+                history=request.history or []
+            )
             return ChatResponse(response=response_text)
 
-        # 그 외 모드는 ChatService를 통해 RAG 체인 실행 (스트리밍)
+        # OpenAI 모드만 ChatService를 통해 RAG 체인 실행 (스트리밍)
         # 스트리밍 제너레이터 생성
         async def stream_response():
             try:
@@ -197,7 +217,7 @@ async def chat(request: ChatRequest, http_request: Request):
                 "해결 방법:\n"
                 "1. OpenAI 계정의 사용량 및 할당량을 확인하세요\n"
                 "2. OpenAI 계정에 결제 정보를 추가하거나 할당량을 늘리세요\n"
-                "3. 또는 '🖥️ 로컬 모델' 버튼을 선택하여 로컬 Midm 모델을 사용하세요"
+                "3. 또는 '🖥️ 로컬 모델' 버튼을 선택하여 로컬 EXAONE 모델을 사용하세요"
             )
             raise HTTPException(
                 status_code=429,
