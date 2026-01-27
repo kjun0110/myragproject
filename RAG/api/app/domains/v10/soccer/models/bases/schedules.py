@@ -7,7 +7,7 @@ ERD 기반 SQLAlchemy 모델 정의.
 from sqlalchemy import Column, String, Integer, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
 
-from app.domains.v10.shared.bases.base import Base
+from app.domains.v10.shared.models.bases.base import Base
 
 
 class Schedule(Base):

@@ -6,7 +6,7 @@ GRI(Global Reporting Initiative) 표준 분류 테이블을 위한 데이터베�
 from sqlalchemy import Column, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.domains.v1.shared.bases.base import Base
+from app.domains.v1.shared.models.bases.base import Base
 
 
 class GRIStandard(Base):

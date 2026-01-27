@@ -3,7 +3,7 @@
 축구 관련 데이터베이스 모델을 제공합니다.
 """
 
-from app.domains.v10.shared.bases.base import Base
+from app.domains.v10.shared.models.bases.base import Base
 from .stadiums import Stadium
 from .teams import Team
 from .schedules import Schedule

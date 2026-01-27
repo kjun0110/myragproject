@@ -7,7 +7,7 @@ ERD 기반 SQLAlchemy 모델 정의.
 from sqlalchemy import Column, String, Integer, Date, BigInteger, ForeignKey
 from sqlalchemy.orm import relationship
 
-from app.domains.v10.shared.bases.base import Base
+from app.domains.v10.shared.models.bases.base import Base
 
 
 class Player(Base):
@@ -51,10 +51,10 @@ class Player(Base):
     nickname = Column(String, nullable=True)  # 선수 별명
 
     # 입단 정보
-    join_yyyy = Column(String, nullable=False)  # 입단 연도 (YYYY 형식)
+    join_yyyy = Column(String, nullable=True)  # 입단 연도 (YYYY 형식)
 
     # 포지션 및 등번호
-    position = Column(String, nullable=False)  # 포지션 (예: DF, MF, FW, GK)
+    position = Column(String, nullable=True)  # 포지션 (예: DF, MF, FW, GK)
     back_no = Column(Integer, nullable=True)  # 등번호
 
     # 개인 정보

@@ -9,7 +9,7 @@ from sqlalchemy import ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.domains.v1.shared.bases.base import Base
+from app.domains.v1.shared.models.bases.base import Base
 
 
 class GRIGovContent(Base):

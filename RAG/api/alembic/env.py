@@ -33,7 +33,7 @@ except ImportError:
 
 # Base와 모든 모델 import (metadata에 등록하기 위해)
 from app.domains.v10.shared.bases.base import Base
-from app.domains.v10.soccer.bases import Player, Schedule, Stadium, Team
+from app.domains.v10.soccer.models.bases import Player, Schedule, Stadium, Team
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

@@ -85,42 +85,42 @@ try:
         load_in_4bit=True,  # 4-bit 양자화
         trust_remote_code=True,  # 커스텀 모델링 코드 필요
     )
-    
+
     print("[OK] Unsloth로 EXAONE 모델 로드 성공!")
     print(f"  - 모델 타입: {type(model).__name__}")
     print(f"  - 토크나이저 타입: {type(tokenizer).__name__}")
-    
+
     # 모델 정보 확인
     if hasattr(model, "config"):
         config = model.config
         print(f"  - 모델 이름: {getattr(config, 'model_type', 'unknown')}")
         print(f"  - Hidden size: {getattr(config, 'hidden_size', 'unknown')}")
         print(f"  - Num layers: {getattr(config, 'num_hidden_layers', 'unknown')}")
-    
+
     # 간단한 추론 테스트
     print("\n[5단계] 추론 테스트")
     print("-" * 60)
-    
+
     test_input = "안녕하세요"
     inputs = tokenizer(test_input, return_tensors="pt", padding=True)
-    
+
     import torch
     if torch.cuda.is_available():
         inputs = {k: v.to("cuda") for k, v in inputs.items()}
         model = model.to("cuda")
-    
+
     with torch.no_grad():
         outputs = model.generate(
             **inputs,
             max_new_tokens=10,
             do_sample=False,
         )
-    
+
     generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
     print(f"[OK] 추론 테스트 성공")
     print(f"  - 입력: {test_input}")
     print(f"  - 출력: {generated_text}")
-    
+
     print("\n" + "=" * 60)
     print("[SUCCESS] 호환성 확인 완료: Unsloth와 EXAONE 모델이 호환됩니다!")
     print("=" * 60)
@@ -128,16 +128,16 @@ try:
     print("  - Unsloth를 사용하여 학습 속도를 2-5배 향상시킬 수 있습니다.")
     print("  - Flash Attention이 자동으로 포함됩니다.")
     print("  - xFormers는 별도로 설정할 필요가 없습니다.")
-    
+
 except Exception as e:
     print(f"\n[ERROR] Unsloth로 EXAONE 모델 로드 실패")
     print(f"  오류: {e}")
     print(f"  오류 타입: {type(e).__name__}")
-    
+
     import traceback
     print(f"\n상세 오류:")
     print(traceback.format_exc())
-    
+
     print("\n" + "=" * 60)
     print("[FAILED] 호환성 확인 실패: Unsloth와 EXAONE 모델이 호환되지 않을 수 있습니다.")
     print("=" * 60)
@@ -145,5 +145,5 @@ except Exception as e:
     print("  - xFormers를 사용하여 속도를 향상시킬 수 있습니다.")
     print("  - Flash Attention을 수동으로 설정할 수 있습니다.")
     print("  - 현재 방식(PEFT + Transformers)을 계속 사용할 수 있습니다.")
-    
+
     sys.exit(1)

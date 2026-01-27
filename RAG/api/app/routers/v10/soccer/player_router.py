@@ -38,8 +38,6 @@ async def upload_player_jsonl(
     """
     logger.info("[ROUTER] Player 업로드 라우터 도달")
     logger.info(f"[ROUTER] 파일명: {file.filename}")
-    logger.info(f"[ROUTER] 파일 크기: {file.size if hasattr(file, 'size') else '알 수 없음'}")
-    logger.info("[ROUTER] 파일 처리 시작")
     
     # 파일 확장자 확인
     if not file.filename.endswith(".jsonl"):
@@ -51,6 +49,10 @@ async def upload_player_jsonl(
     try:
         # 파일 내용 읽기
         content = await file.read()
+        file_size = len(content)
+        logger.info(f"[ROUTER] 파일 크기: {file_size} bytes")
+        logger.info("[ROUTER] 파일 처리 시작")
+        
         text_content = content.decode("utf-8")
         
         # JSONL 파싱 (각 줄이 JSON 객체)
@@ -75,20 +77,24 @@ async def upload_player_jsonl(
                 detail="유효한 JSON 레코드가 없습니다.",
             )
         
-        # 첫 번째부터 다섯 번째 행까지만 추출
+        # 첫 5개 행을 로그로 출력
         first_five_records = records[:5]
+        logger.info(f"[ROUTER] 총 {len(records)}개 레코드 중 첫 5개 레코드:")
+        for idx, record in enumerate(first_five_records, 1):
+            logger.info(f"[ROUTER] 레코드 {idx}: {json.dumps(record, ensure_ascii=False, indent=2)}")
         
-        logger.info(f"Player 파일 업로드 완료: 총 {len(records)}개 레코드 중 첫 5개 출력")
+        # Orchestrator를 통한 전략 패턴 처리
+        logger.info("[ROUTER] Orchestrator를 통한 처리 시작")
+        from app.domains.v10.soccer.hub.orchestrators.player_orchestrator import PlayerOrchestrator
+        
+        orchestrator = PlayerOrchestrator()
+        result = await orchestrator.process(records)
+        
+        logger.info(f"[ROUTER] Player 파일 업로드 및 처리 완료: 총 {len(records)}개 레코드")
         
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={
-                "success": True,
-                "message": "Player 파일 업로드 완료",
-                "total_records": len(records),
-                "displayed_records": len(first_five_records),
-                "data": first_five_records,
-            },
+            content=result,
         )
     
     except HTTPException:

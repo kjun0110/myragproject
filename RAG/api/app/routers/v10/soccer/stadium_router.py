@@ -75,20 +75,24 @@ async def upload_stadium_jsonl(
                 detail="유효한 JSON 레코드가 없습니다.",
             )
         
-        # 첫 번째부터 다섯 번째 행까지만 추출
+        # 첫 5개 행을 로그로 출력
         first_five_records = records[:5]
+        logger.info(f"[ROUTER] 총 {len(records)}개 레코드 중 첫 5개 레코드:")
+        for idx, record in enumerate(first_five_records, 1):
+            logger.info(f"[ROUTER] 레코드 {idx}: {json.dumps(record, ensure_ascii=False, indent=2)}")
         
-        logger.info(f"Stadium 파일 업로드 완료: 총 {len(records)}개 레코드 중 첫 5개 출력")
+        # Orchestrator를 통한 전략 패턴 처리
+        logger.info("[ROUTER] Orchestrator를 통한 처리 시작")
+        from app.domains.v10.soccer.hub.orchestrators.stadium_orchestrator import StadiumOrchestrator
+        
+        orchestrator = StadiumOrchestrator()
+        result = await orchestrator.process(records)
+        
+        logger.info(f"[ROUTER] Stadium 파일 업로드 및 처리 완료: 총 {len(records)}개 레코드")
         
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content={
-                "success": True,
-                "message": "Stadium 파일 업로드 완료",
-                "total_records": len(records),
-                "displayed_records": len(first_five_records),
-                "data": first_five_records,
-            },
+            content=result,
         )
     
     except HTTPException:

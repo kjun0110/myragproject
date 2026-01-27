@@ -160,7 +160,7 @@ xFormers 사용
 
 1. **테스트 스크립트 실행**: `python api/scripts/test_unsloth_compatibility.py`
 2. **결과 확인**: 호환 여부 확인
-3. **대안 선택**: 
+3. **대안 선택**:
    - 호환 시 → Unsloth 사용
    - 비호환 시 → xFormers 사용
 

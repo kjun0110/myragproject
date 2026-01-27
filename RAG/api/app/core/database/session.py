@@ -17,12 +17,33 @@ def create_database_engine():
     if not database_url:
         raise ValueError("DATABASE_URL이 설정되지 않았습니다. .env 파일에 DATABASE_URL을 설정하세요.")
 
+    # URL에서 sslmode 파라미터 제거 (asyncpg는 지원하지 않음)
+    from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+    parsed = urlparse(database_url)
+    query_params = parse_qs(parsed.query)
+    
+    # sslmode와 channel_binding 파라미터 제거
+    query_params.pop('sslmode', None)
+    query_params.pop('channel_binding', None)
+    
+    # 쿼리 파라미터 재구성
+    new_query = urlencode(query_params, doseq=True)
+    clean_url = urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        new_query,
+        parsed.fragment
+    ))
+
     # PostgreSQL URL을 asyncpg로 변환
-    if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if clean_url.startswith("postgresql://"):
+        clean_url = clean_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
     # 엔진 설정
     import os
+    import ssl
     debug_mode = os.getenv("DEBUG", "False").lower() == "true"
     engine_kwargs = {
         "echo": debug_mode,
@@ -30,8 +51,14 @@ def create_database_engine():
         "pool_pre_ping": True,
     }
 
+    # PostgreSQL의 경우 SSL 설정 추가 (Neon DB는 SSL 필수)
+    if "postgresql" in clean_url and "sqlite" not in clean_url:
+        engine_kwargs["connect_args"] = {
+            "ssl": True,  # asyncpg는 ssl=True로 SSL 연결
+        }
+
     # SQLite의 경우 특별 설정 (테스트 환경)
-    if "sqlite" in database_url:
+    if "sqlite" in clean_url:
         engine_kwargs.update({
             "poolclass": StaticPool,
             "connect_args": {
@@ -39,7 +66,7 @@ def create_database_engine():
             },
         })
 
-    return create_async_engine(database_url, **engine_kwargs)
+    return create_async_engine(clean_url, **engine_kwargs)
 
 # 전역 엔진 인스턴스
 engine = create_database_engine()

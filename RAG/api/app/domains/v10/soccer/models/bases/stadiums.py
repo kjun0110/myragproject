@@ -7,7 +7,7 @@ ERD 기반 SQLAlchemy 모델 정의.
 from sqlalchemy import Column, Integer, String, BigInteger
 from sqlalchemy.orm import relationship
 
-from app.domains.v10.shared.bases.base import Base
+from app.domains.v10.shared.models.bases.base import Base
 
 
 class Stadium(Base):
@@ -19,7 +19,7 @@ class Stadium(Base):
     Attributes:
         id: 경기장 고유 ID (BigInteger, Primary Key)
         stadium_code: 경기장 코드
-        statdium_name: 경기장 이름
+        stadium_name: 경기장 이름
         hometeam_code: 홈팀 코드 (해당 경기장을 홈으로 사용하는 팀)
         seat_count: 수용 인원 수
         address: 경기장 주소
@@ -35,7 +35,7 @@ class Stadium(Base):
 
     # 경기장 기본 정보
     stadium_code = Column(String, nullable=False)  # 경기장 코드 (예: D03, B02, C06)
-    statdium_name = Column(String, nullable=False)  # 경기장 이름 (예: 전주월드컵경기장, 성남종합운동장)
+    stadium_name = Column(String, nullable=False)  # 경기장 이름 (예: 전주월드컵경기장, 성남종합운동장)
 
     # 홈팀 정보
     hometeam_code = Column(String, nullable=True)  # 홈팀 코드 (해당 경기장을 홈으로 사용하는 팀)
