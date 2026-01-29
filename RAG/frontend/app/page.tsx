@@ -54,6 +54,12 @@ export default function Home() {
       path: "/v10/admin",
       description: "어드민 대시보드",
     },
+    {
+      id: "study_main",
+      label: "💬 study main",
+      path: "/v10/main",
+      description: "채팅 화면",
+    },
   ];
 
   const handleMenuClick = (path: string) => {

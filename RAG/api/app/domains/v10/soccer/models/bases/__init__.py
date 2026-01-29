@@ -8,5 +8,16 @@ from .stadiums import Stadium
 from .teams import Team
 from .schedules import Schedule
 from .players import Player
+from .embeddings import PlayerEmbedding, TeamEmbedding, StadiumEmbedding, ScheduleEmbedding
 
-__all__ = ["Base", "Stadium", "Team", "Schedule", "Player"]
+__all__ = [
+    "Base",
+    "Stadium",
+    "Team",
+    "Schedule",
+    "Player",
+    "PlayerEmbedding",
+    "TeamEmbedding",
+    "StadiumEmbedding",
+    "ScheduleEmbedding"
+]

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal
 
 import torch
 from langgraph.graph import END, START, StateGraph
+from peft import PeftModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from app.common.loaders import ModelLoader
@@ -321,5 +322,167 @@ class ScheduleOrchestrator:
                 "message": "처리 실패",
                 "errors": final_state.get("errors", []),
             }
+        
+        return result
+    
+    async def process_question(self, question: str) -> Dict[str, Any]:
+        """
+        채팅 질문을 처리합니다.
+        
+        KoELECTRA 분류기 어댑터를 사용하여 질문이 정책 기반인지 규칙 기반인지 판단합니다.
+        
+        Args:
+            question: 사용자가 입력한 질문
+            
+        Returns:
+            처리 결과 딕셔너리
+        """
+        logger.info("=" * 60)
+        logger.info("[SCHEDULE ORCHESTRATOR] 채팅 질문 처리 시작")
+        logger.info(f"[SCHEDULE ORCHESTRATOR] 받은 질문: {question}")
+        logger.info("=" * 60)
+        
+        # 질문을 프린트
+        print(f"\n{'='*60}")
+        print(f"[SCHEDULE ORCHESTRATOR] 채팅 질문 수신")
+        print(f"[SCHEDULE ORCHESTRATOR] 질문 내용: {question}")
+        print(f"{'='*60}\n")
+        
+        # KoELECTRA 분류기 어댑터 로드 및 판단
+        try:
+            logger.info("[SCHEDULE ORCHESTRATOR] KoELECTRA 분류기 어댑터 로드 시작...")
+            
+            # 어댑터 경로 직접 지정 (koelectra_classifier 디렉토리)
+            from pathlib import Path
+            from peft import PeftModel
+            
+            current_file = Path(__file__).resolve()
+            # schedule_orchestrator.py 위치: api/app/domains/v10/soccer/hub/orchestrators/schedule_orchestrator.py
+            # api_dir까지: parent 7번 (orchestrators -> hub -> soccer -> v10 -> domains -> app -> api)
+            api_dir = current_file.parent.parent.parent.parent.parent.parent.parent  # api/ 디렉토리
+            classifier_adapter_base = api_dir / "artifacts" / "koelectra" / "koelectra_classifier" / "koelectra-small-v3-discriminator-classifier-lora"
+            
+            # 최신 타임스탬프 디렉토리 찾기
+            adapter_path = None
+            if classifier_adapter_base.exists():
+                subdirs = [d for d in classifier_adapter_base.iterdir() if d.is_dir()]
+                if subdirs:
+                    latest_adapter_path = max(subdirs, key=lambda x: x.stat().st_mtime)
+                    adapter_path = str(latest_adapter_path)
+                    logger.info(f"[SCHEDULE ORCHESTRATOR] 어댑터 경로: {adapter_path}")
+                else:
+                    logger.warning(f"[SCHEDULE ORCHESTRATOR] 어댑터 서브디렉토리를 찾을 수 없습니다: {classifier_adapter_base}")
+            else:
+                logger.warning(f"[SCHEDULE ORCHESTRATOR] 어댑터 디렉토리를 찾을 수 없습니다: {classifier_adapter_base}")
+            
+            # 베이스 모델 로드
+            model_path = ModelLoader.KOELECTRA_MODEL_ID
+            logger.info(f"[SCHEDULE ORCHESTRATOR] 베이스 모델 로드: {model_path}")
+            
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            base_model = AutoModelForSequenceClassification.from_pretrained(
+                model_path,
+                num_labels=3,  # 3-class 분류
+            )
+            base_model.to(self.device)
+            
+            # 어댑터 로드
+            if adapter_path:
+                logger.info(f"[SCHEDULE ORCHESTRATOR] 어댑터 로드 중: {adapter_path}")
+                classifier_model = PeftModel.from_pretrained(base_model, adapter_path)
+                classifier_tokenizer = tokenizer
+                logger.info("[SCHEDULE ORCHESTRATOR] 어댑터 로드 완료")
+            else:
+                logger.warning("[SCHEDULE ORCHESTRATOR] 어댑터를 찾을 수 없어 베이스 모델만 사용합니다.")
+                classifier_model = base_model
+                classifier_tokenizer = tokenizer
+            
+            classifier_model.eval()
+            logger.info("[SCHEDULE ORCHESTRATOR] KoELECTRA 분류기 어댑터 로드 완료")
+            
+            # 질문 분류
+            logger.info("[SCHEDULE ORCHESTRATOR] 질문 분류 시작...")
+            inputs = classifier_tokenizer(
+                question,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512,
+            )
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            with torch.no_grad():
+                outputs = classifier_model(**inputs)
+                logits = outputs.logits
+                probs = torch.softmax(logits, dim=-1)
+                predicted_class = torch.argmax(probs, dim=-1).item()
+                confidence = probs[0][predicted_class].item()
+            
+            # 라벨 매핑: 0=도메인 외, 1=정책 기반, 2=규칙 기반
+            label_map = {
+                0: "도메인 외 (OUT_OF_DOMAIN)",
+                1: "정책 기반 (POLICY_BASED)",
+                2: "규칙 기반 (RULE_BASED)",
+            }
+            
+            predicted_label = label_map.get(predicted_class, f"Unknown ({predicted_class})")
+            
+            # 각 클래스별 확률
+            prob_out_of_domain = probs[0][0].item()
+            prob_policy = probs[0][1].item()
+            prob_rule = probs[0][2].item()
+            
+            # 결과 프린트
+            print(f"\n{'='*60}")
+            print(f"[SCHEDULE ORCHESTRATOR] 질문 분류 결과")
+            print(f"{'='*60}")
+            print(f"질문: {question}")
+            print(f"판단 결과: {predicted_label}")
+            print(f"신뢰도: {confidence:.2%}")
+            print(f"\n각 클래스별 확률:")
+            print(f"  - 도메인 외 (0): {prob_out_of_domain:.2%}")
+            print(f"  - 정책 기반 (1): {prob_policy:.2%}")
+            print(f"  - 규칙 기반 (2): {prob_rule:.2%}")
+            print(f"{'='*60}\n")
+            
+            logger.info(f"[SCHEDULE ORCHESTRATOR] 질문 분류 완료: {predicted_label} (신뢰도: {confidence:.2%})")
+            
+            # 간단한 응답 반환
+            from datetime import datetime
+            result = {
+                "success": True,
+                "question": question,
+                "classification": {
+                    "label": predicted_class,
+                    "label_name": predicted_label,
+                    "confidence": float(confidence),
+                    "probabilities": {
+                        "out_of_domain": float(prob_out_of_domain),
+                        "policy_based": float(prob_policy),
+                        "rule_based": float(prob_rule),
+                    },
+                },
+                "message": f"질문 '{question}'을 받았습니다. 분류 결과: {predicted_label}",
+                "processed_at": datetime.now().isoformat(),
+            }
+            
+        except Exception as e:
+            logger.error(f"[SCHEDULE ORCHESTRATOR] 분류기 로드/분류 실패: {e}", exc_info=True)
+            print(f"\n{'='*60}")
+            print(f"[SCHEDULE ORCHESTRATOR] 분류기 오류")
+            print(f"오류: {str(e)}")
+            print(f"{'='*60}\n")
+            
+            # 오류 발생 시 기본 응답
+            from datetime import datetime
+            result = {
+                "success": False,
+                "question": question,
+                "error": str(e),
+                "message": f"질문 '{question}'을 받았지만 분류에 실패했습니다.",
+                "processed_at": datetime.now().isoformat(),
+            }
+        
+        logger.info(f"[SCHEDULE ORCHESTRATOR] 채팅 질문 처리 완료")
         
         return result

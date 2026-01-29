@@ -32,7 +32,7 @@ except ImportError:
     pass  # python-dotenv가 없으면 환경 변수만 사용
 
 # Base와 모든 모델 import (metadata에 등록하기 위해)
-from app.domains.v10.shared.bases.base import Base
+from app.domains.v10.shared.models.bases.base import Base
 from app.domains.v10.soccer.models.bases import Player, Schedule, Stadium, Team
 
 # this is the Alembic Config object, which provides

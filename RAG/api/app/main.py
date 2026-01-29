@@ -342,6 +342,19 @@ def _register_routers(app_instance):
     except Exception as e:
         logger.error(f"[ERROR] Soccer Schedule 라우터 등록 실패: {e}")
 
+    # Soccer Chat 라우터
+    try:
+        from app.routers.v10.soccer.chat_router import router as chat_router  # type: ignore
+
+        app_instance.include_router(chat_router)
+        logger.info("[✓] Soccer Chat 라우터 등록 완료: /api/v10/soccer/chat")
+    except ImportError as e:
+        logger.warning(f"[WARNING] Soccer Chat 라우터 import 실패: {e}")
+    except AttributeError as e:
+        logger.warning(f"[WARNING] Soccer Chat 라우터 속성 오류: {e}")
+    except Exception as e:
+        logger.error(f"[ERROR] Soccer Chat 라우터 등록 실패: {e}")
+
 # 루트 엔드포인트
 @app.get("/")
 async def root():

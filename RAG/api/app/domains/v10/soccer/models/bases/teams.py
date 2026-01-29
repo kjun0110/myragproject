@@ -36,13 +36,13 @@ class Team(Base):
     """
 
 
-    __tablename__ = "team"
+    __tablename__ = "teams"
 
     # 기본 키
     id = Column(BigInteger, primary_key=True, nullable=False)  # 팀 고유 ID (BigInt 타입)
 
     # 외래 키
-    stadium_id = Column(BigInteger, nullable=True)  # 경기장 ID (FK -> stadium.id)
+    stadium_id = Column(BigInteger, ForeignKey("stadiums.id"), nullable=True)  # 경기장 ID (FK -> stadiums.id)
 
     # 팀 기본 정보
     team_code = Column(String, nullable=False)  # 팀 코드 (예: K05, K08, K03)
@@ -69,4 +69,7 @@ class Team(Base):
 
     # 소유자 정보
     owner = Column(String, nullable=True)  # 구단주
+    
+    # Relationships
+    embeddings = relationship("TeamEmbedding", back_populates="team", cascade="all, delete-orphan")
 

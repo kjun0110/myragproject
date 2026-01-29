@@ -34,13 +34,13 @@ class Player(Base):
     """
 
 
-    __tablename__ = "player"
+    __tablename__ = "players"
 
     # 기본 키
     id = Column(BigInteger, primary_key=True, nullable=False)  # 선수 고유 ID (BigInt 타입)
 
     # 외래 키
-    team_id = Column(BigInteger, nullable=True)  # 팀 ID (FK -> team.id)
+    team_id = Column(BigInteger, ForeignKey("teams.id"), nullable=True)  # 팀 ID (FK -> teams.id)
 
     # 팀 정보
     team_code = Column(String, nullable=False)  # 소속 팀 코드 (예: K06, K01)
@@ -65,4 +65,7 @@ class Player(Base):
     # 신체 정보
     height = Column(Integer, nullable=True)  # 키 (cm)
     weight = Column(Integer, nullable=True)  # 몸무게 (kg)
+    
+    # Relationships
+    embeddings = relationship("PlayerEmbedding", back_populates="player", cascade="all, delete-orphan")
 

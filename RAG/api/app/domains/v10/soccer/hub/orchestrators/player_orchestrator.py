@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Literal
 
 import torch
 from langgraph.graph import END, START, StateGraph
+from peft import PeftModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from app.common.loaders import ModelLoader
@@ -21,31 +22,123 @@ logger = logging.getLogger(__name__)
 
 class PlayerOrchestrator:
     """Player 데이터 처리 오케스트레이터 (LangGraph 기반).
-    
+
     KoELECTRA를 사용하여 데이터가 정책 기반인지 규칙 기반인지 판단하고,
     LangGraph StateGraph를 통해 적절한 경로로 처리합니다.
     """
-    
+
     def __init__(self):
         # KoELECTRA 모델 로드 (판단용으로 유지)
         self.model = None
         self.tokenizer = None
         self.device = None
         self._load_model()
-        
+
+        # PlayerAgent 한 번 생성 (ExaOne 로드 포함, MCP 툴 및 정책 처리에서 공유)
+        from app.domains.v10.soccer.spokes.agents.player_agent import PlayerAgent
+
+        self._player_agent = PlayerAgent()
+
+        # MCP 연결: 오케스트레이터에서 FastMCP 생성 (순서: 오케스트레이터(KoELECTRA) → 에이전트(ExaOne))
+        self.mcp = self._build_mcp()
+
         # LangGraph 빌드
         self.graph = self._build_graph()
         self.app = self.graph.compile()
-    
+
+    def get_mcp(self) -> Any:
+        """FastMCP 서버를 반환합니다. KoELECTRA·ExaOne 툴이 연결되어 있습니다."""
+        return self.mcp
+
+    def _koelectra_classify_tool(self, text: str) -> str:
+        """[MCP 툴] KoELECTRA로 텍스트가 정책 기반인지 규칙 기반인지 분류합니다.
+
+        Args:
+            text: 분류할 텍스트 (질문 또는 데이터 설명)
+
+        Returns:
+            JSON 문자열: {"strategy": "policy"|"rule", "confidence": float}
+        """
+        if self.model is None or self.tokenizer is None:
+            return json.dumps(
+                {"strategy": "rule", "confidence": 0.0, "error": "KoELECTRA 미로드"},
+                ensure_ascii=False,
+            )
+        try:
+            inputs = self.tokenizer(
+                text,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512,
+            )
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                logits = outputs.logits
+                probs = torch.softmax(logits, dim=-1)
+                predicted_class = torch.argmax(probs, dim=-1).item()
+            strategy = "policy" if predicted_class == 0 else "rule"
+            confidence = probs[0][predicted_class].item()
+            return json.dumps(
+                {"strategy": strategy, "confidence": confidence},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            logger.exception("koelectra_classify 실패: %s", e)
+            return json.dumps(
+                {"strategy": "rule", "confidence": 0.0, "error": str(e)},
+                ensure_ascii=False,
+            )
+
+    def _build_mcp(self) -> Any:
+        """FastMCP 서버를 생성하고 KoELECTRA·ExaOne 툴을 등록합니다.
+
+        프론트 흐름 순서: 오케스트레이터(KoELECTRA) → 에이전트(ExaOne).
+        """
+        from fastmcp import FastMCP
+
+        mcp = FastMCP("Player MCP (KoELECTRA + ExaOne)")
+        orch = self
+
+        # 1) 오케스트레이터: KoELECTRA 툴 (프론트에서 먼저 오는 단계)
+        @mcp.tool
+        def koelectra_classify(text: str) -> str:
+            """KoELECTRA로 텍스트가 정책 기반인지 규칙 기반인지 분류합니다.
+
+            Args:
+                text: 분류할 텍스트 (질문 또는 데이터 설명)
+
+            Returns:
+                JSON 문자열: {"strategy": "policy"|"rule", "confidence": float}
+            """
+            return orch._koelectra_classify_tool(text)
+
+        # 2) 에이전트: ExaOne 툴 (프론트 흐름상 다음 단계)
+        @mcp.tool
+        def exaone_generate(prompt: str, max_new_tokens: int = 256) -> str:
+            """ExaOne로 프롬프트에 대한 텍스트를 생성합니다.
+
+            Args:
+                prompt: 입력 프롬프트
+                max_new_tokens: 최대 생성 토큰 수 (기본 256)
+
+            Returns:
+                생성된 텍스트 (모델 미로드 시 빈 문자열)
+            """
+            return orch._player_agent.exaone_generate(prompt, max_new_tokens=max_new_tokens)
+
+        return mcp
+
     def _load_model(self):
         """KoELECTRA 모델을 로드합니다."""
         try:
             logger.info("[ORCHESTRATOR] KoELECTRA 모델 로드 시작...")
-            
+
             # 디바이스 설정
             self.device = "cuda" if torch.cuda.is_available() else "cpu"
             logger.info(f"[ORCHESTRATOR] 디바이스: {self.device}")
-            
+
             # 모델 로드 (분류를 위한 모델 - 정책/규칙 판단용)
             # num_labels=2: 정책 기반(0) vs 규칙 기반(1)
             self.model, self.tokenizer = ModelLoader.load_koelectra_model(
@@ -53,25 +146,25 @@ class PlayerOrchestrator:
                 device=self.device,
                 num_labels=2,  # 정책/규칙 이진 분류
             )
-            
+
             self.model.eval()  # 평가 모드
             logger.info("[ORCHESTRATOR] KoELECTRA 모델 로드 완료")
-            
+
         except Exception as e:
             logger.error(f"[ORCHESTRATOR] KoELECTRA 모델 로드 실패: {e}", exc_info=True)
             raise
-    
+
     def _build_graph(self) -> StateGraph:
         """LangGraph StateGraph를 빌드합니다."""
         graph = StateGraph(PlayerProcessingState)
-        
+
         # 노드 추가
         graph.add_node("validate", self._validate_node)
         graph.add_node("determine_strategy", self._determine_strategy_node)
         graph.add_node("policy_process", self._policy_process_node)
         graph.add_node("rule_process", self._rule_process_node)
         graph.add_node("finalize", self._finalize_node)
-        
+
         # 엣지 추가
         graph.add_edge(START, "validate")
         graph.add_edge("validate", "determine_strategy")
@@ -86,13 +179,13 @@ class PlayerOrchestrator:
         graph.add_edge("policy_process", "finalize")
         graph.add_edge("rule_process", "finalize")
         graph.add_edge("finalize", END)
-        
+
         return graph
-    
+
     async def _validate_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
         """데이터 검증 노드."""
         logger.info(f"[ORCHESTRATOR] 검증 노드 시작: {len(state['records'])}개 레코드")
-        
+
         # 기본 검증 (빈 리스트 체크)
         if not state['records']:
             return {
@@ -100,28 +193,28 @@ class PlayerOrchestrator:
                 "validation_errors": [{"error": "레코드가 없습니다."}],
                 "errors": [{"step": "validate", "error": "레코드가 없습니다."}],
             }
-        
+
         # 첫 5개 레코드 로그 출력
         first_five_records = state['records'][:5]
         logger.info(f"[ORCHESTRATOR] 오케스트레이터에 도달한 데이터 상위 5개 레코드:")
         for idx, record in enumerate(first_five_records, 1):
             logger.info(f"[ORCHESTRATOR] 레코드 {idx}: {json.dumps(record, ensure_ascii=False, indent=2)}")
-        
+
         return {
             "current_step": "validate",
             "validated_records": state['records'],  # 실제 검증은 Service에서 수행
             "validation_errors": [],
         }
-    
+
     async def _determine_strategy_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
         """전략 판단 노드."""
         logger.info("[ORCHESTRATOR] 전략 판단 노드 시작")
-        
+
         records = state.get('validated_records', state['records'])
-        
+
         # 휴리스틱 판단
         heuristic_result = self._determine_strategy_heuristic(records)
-        
+
         # KoELECTRA 판단 (참고용)
         koelectra_result = None
         confidence = None
@@ -133,14 +226,14 @@ class PlayerOrchestrator:
             )
         except Exception as e:
             logger.warning(f"[ORCHESTRATOR] KoELECTRA 판단 스킵: {e}")
-        
+
         # 최종 결정: 휴리스틱 결과 사용
         final_strategy = heuristic_result
         logger.info(
             f"[ORCHESTRATOR] 최종 전략 결정: {final_strategy} "
             f"(휴리스틱 기반, JSONL → players 테이블 저장)"
         )
-        
+
         return {
             "current_step": "determine_strategy",
             "strategy_type": final_strategy,
@@ -148,26 +241,24 @@ class PlayerOrchestrator:
             "heuristic_result": heuristic_result,
             "koelectra_result": koelectra_result,
         }
-    
+
     def _route_strategy(self, state: PlayerProcessingState) -> Literal["policy", "rule"]:
         """전략 라우팅 함수."""
         strategy = state.get("strategy_type", "rule")
         logger.info(f"[ORCHESTRATOR] 전략 라우팅: {strategy}")
         return strategy  # type: ignore
-    
+
     async def _policy_process_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
         """정책 기반 처리 노드 (Agent 호출)."""
         logger.info("[ORCHESTRATOR] 정책 기반 처리 노드 시작")
-        
+
         try:
-            from app.domains.v10.soccer.spokes.agents.player_agent import PlayerAgent
-            
-            agent = PlayerAgent()
+            agent = self._player_agent
             records = state.get('validated_records', state['records'])
             result = await agent.process(records)
-            
+
             logger.info("[ORCHESTRATOR] 정책 기반 처리 완료")
-            
+
             return {
                 "current_step": "policy_process",
                 "result": result,
@@ -179,20 +270,20 @@ class PlayerOrchestrator:
                 "current_step": "policy_process",
                 "errors": state.get("errors", []) + [{"step": "policy_process", "error": str(e)}],
             }
-    
+
     async def _rule_process_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
         """규칙 기반 처리 노드 (Service 호출)."""
         logger.info("[ORCHESTRATOR] 규칙 기반 처리 노드 시작")
-        
+
         try:
             from app.domains.v10.soccer.spokes.services.player_service import PlayerService
-            
+
             service = PlayerService()
             records = state.get('validated_records', state['records'])
             result = await service.process(records)
-            
+
             logger.info("[ORCHESTRATOR] 규칙 기반 처리 완료")
-            
+
             return {
                 "current_step": "rule_process",
                 "result": result,
@@ -204,11 +295,11 @@ class PlayerOrchestrator:
                 "current_step": "rule_process",
                 "errors": state.get("errors", []) + [{"step": "rule_process", "error": str(e)}],
             }
-    
+
     async def _finalize_node(self, state: PlayerProcessingState) -> Dict[str, Any]:
         """최종 정리 노드."""
         logger.info("[ORCHESTRATOR] 최종 정리 노드 시작")
-        
+
         result = state.get("result", {})
         if not result:
             result = {
@@ -216,49 +307,49 @@ class PlayerOrchestrator:
                 "message": "처리 실패",
                 "errors": state.get("errors", []),
             }
-        
+
         logger.info("[ORCHESTRATOR] Player 처리 완료")
-        
+
         return {
             "current_step": "finalize",
             "result": result,
         }
-    
+
     def _determine_strategy_heuristic(self, records: List[Dict[str, Any]]) -> str:
         """휴리스틱을 사용하여 정책 기반인지 규칙 기반인지 판단합니다."""
         try:
             if not records:
                 logger.warning("[ORCHESTRATOR] 레코드가 없어 규칙 기반으로 기본 설정")
                 return "rule"
-            
+
             # 샘플 레코드 확인 (처음 5개)
             sample_records = records[:5]
-            
+
             # 휴리스틱 1: 데이터 복잡도 체크
             has_complex_fields = False
             complex_indicators = ["metadata", "nested_data", "calculated_fields", "ai_analysis"]
-            
+
             for record in sample_records:
                 record_str = json.dumps(record, ensure_ascii=False).lower()
                 if any(indicator in record_str for indicator in complex_indicators):
                     has_complex_fields = True
                     break
-            
+
             # 휴리스틱 2: 예외/에러 케이스 체크
             has_exceptions = any(
-                record.get("exception_flag") or 
+                record.get("exception_flag") or
                 record.get("validation_errors") or
                 record.get("requires_ai_judgment")
                 for record in sample_records
             )
-            
+
             # 휴리스틱 3: 비정형 데이터 존재 여부
             has_unstructured_data = any(
                 isinstance(record.get("notes"), str) and len(record.get("notes", "")) > 500 or
                 isinstance(record.get("description"), str) and len(record.get("description", "")) > 500
                 for record in sample_records
             )
-            
+
             # 판단 로직: 대부분의 경우 규칙 기반으로 처리
             if has_complex_fields or has_exceptions or has_unstructured_data:
                 strategy = "policy"
@@ -269,7 +360,7 @@ class PlayerOrchestrator:
                     reason.append("예외 케이스 존재")
                 if has_unstructured_data:
                     reason.append("비정형 데이터 존재")
-                
+
                 logger.info(
                     f"[ORCHESTRATOR] 휴리스틱 판단 결과: {strategy} "
                     f"(이유: {', '.join(reason)})"
@@ -280,15 +371,15 @@ class PlayerOrchestrator:
                     f"[ORCHESTRATOR] 휴리스틱 판단 결과: {strategy} "
                     f"(구조화된 데이터, 단순 검증 필요)"
                 )
-            
+
             return strategy
-            
+
         except Exception as e:
             logger.warning(
                 f"[ORCHESTRATOR] 휴리스틱 판단 실패, 기본값(규칙 기반) 사용: {e}"
             )
             return "rule"
-    
+
     def _determine_strategy_koelectra_with_confidence(
         self, records: List[Dict[str, Any]]
     ) -> tuple[str, float]:
@@ -297,7 +388,7 @@ class PlayerOrchestrator:
             # 레코드들을 텍스트로 변환 (샘플 데이터 사용)
             sample_records = records[:5]  # 처음 5개만 사용
             text_data = json.dumps(sample_records, ensure_ascii=False)
-            
+
             # 프롬프트 구성
             prompt = f"""
 다음 Player 데이터를 분석하여 정책 기반 처리인지 규칙 기반 처리인지 판단하세요.
@@ -310,7 +401,7 @@ class PlayerOrchestrator:
 
 답변 형식: "policy" 또는 "rule"
 """
-            
+
             # 토크나이징
             inputs = self.tokenizer(
                 prompt,
@@ -320,45 +411,45 @@ class PlayerOrchestrator:
                 max_length=512,
             )
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
+
             # 추론
             with torch.no_grad():
                 outputs = self.model(**inputs)
                 logits = outputs.logits
                 probs = torch.softmax(logits, dim=-1)
                 predicted_class = torch.argmax(probs, dim=-1).item()
-            
+
             # 0: 정책 기반, 1: 규칙 기반
             strategy = "policy" if predicted_class == 0 else "rule"
             confidence = probs[0][predicted_class].item()
-            
+
             logger.info(
                 f"[ORCHESTRATOR] KoELECTRA 판단 결과: {strategy} "
                 f"(신뢰도: {confidence:.2%})"
             )
-            
+
             return strategy, confidence
-            
+
         except Exception as e:
             logger.warning(
                 f"[ORCHESTRATOR] KoELECTRA 판단 실패: {e}"
             )
             raise
-    
+
     async def process(self, records: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Player 레코드들을 처리합니다.
-        
+
         LangGraph StateGraph를 통해 정책 기반 또는 규칙 기반으로 처리합니다.
-        
+
         Args:
             records: 처리할 Player 레코드 리스트
-            
+
         Returns:
             처리 결과 딕셔너리
         """
         logger.info(f"[ORCHESTRATOR] Player 처리 시작: {len(records)}개 레코드")
-        
+
         # 초기 상태 생성
         initial_state: PlayerProcessingState = {
             "records": records,
@@ -373,10 +464,10 @@ class PlayerOrchestrator:
             "processed_count": None,
             "errors": [],
         }
-        
+
         # LangGraph 실행
         final_state = await self.app.ainvoke(initial_state)
-        
+
         # 결과 반환
         result = final_state.get("result", {})
         if not result:
@@ -385,5 +476,166 @@ class PlayerOrchestrator:
                 "message": "처리 실패",
                 "errors": final_state.get("errors", []),
             }
-        
+
+        return result
+
+    async def process_question(self, question: str) -> Dict[str, Any]:
+        """
+        채팅 질문을 처리합니다.
+
+        KoELECTRA 분류기 어댑터를 사용하여 질문이 정책 기반인지 규칙 기반인지 판단합니다.
+
+        Args:
+            question: 사용자가 입력한 질문
+
+        Returns:
+            처리 결과 딕셔너리
+        """
+        logger.info("=" * 60)
+        logger.info("[ORCHESTRATOR] 채팅 질문 처리 시작")
+        logger.info(f"[ORCHESTRATOR] 받은 질문: {question}")
+        logger.info("=" * 60)
+
+        # 질문을 프린트
+        print(f"\n{'='*60}")
+        print(f"[PLAYER ORCHESTRATOR] 채팅 질문 수신")
+        print(f"[PLAYER ORCHESTRATOR] 질문 내용: {question}")
+        print(f"{'='*60}\n")
+
+        # KoELECTRA 분류기 어댑터 로드 및 판단
+        try:
+            logger.info("[ORCHESTRATOR] KoELECTRA 분류기 어댑터 로드 시작...")
+
+            # 어댑터 경로 직접 지정 (koelectra_classifier 디렉토리)
+            from pathlib import Path
+
+            current_file = Path(__file__).resolve()
+            # player_orchestrator.py 위치: api/app/domains/v10/soccer/hub/orchestrators/player_orchestrator.py
+            # api_dir까지: parent 7번 (orchestrators -> hub -> soccer -> v10 -> domains -> app -> api)
+            api_dir = current_file.parent.parent.parent.parent.parent.parent.parent  # api/ 디렉토리
+            classifier_adapter_base = api_dir / "artifacts" / "koelectra" / "koelectra_classifier" / "koelectra-small-v3-discriminator-classifier-lora"
+
+            # 최신 타임스탬프 디렉토리 찾기
+            adapter_path = None
+            if classifier_adapter_base.exists():
+                subdirs = [d for d in classifier_adapter_base.iterdir() if d.is_dir()]
+                if subdirs:
+                    latest_adapter_path = max(subdirs, key=lambda x: x.stat().st_mtime)
+                    adapter_path = str(latest_adapter_path)
+                    logger.info(f"[ORCHESTRATOR] 어댑터 경로: {adapter_path}")
+                else:
+                    logger.warning(f"[ORCHESTRATOR] 어댑터 서브디렉토리를 찾을 수 없습니다: {classifier_adapter_base}")
+            else:
+                logger.warning(f"[ORCHESTRATOR] 어댑터 디렉토리를 찾을 수 없습니다: {classifier_adapter_base}")
+
+            # 베이스 모델 로드
+            model_path = ModelLoader.KOELECTRA_MODEL_ID
+            logger.info(f"[ORCHESTRATOR] 베이스 모델 로드: {model_path}")
+
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            base_model = AutoModelForSequenceClassification.from_pretrained(
+                model_path,
+                num_labels=3,  # 3-class 분류
+            )
+            base_model.to(self.device)
+
+            # 어댑터 로드
+            if adapter_path:
+                logger.info(f"[ORCHESTRATOR] 어댑터 로드 중: {adapter_path}")
+                classifier_model = PeftModel.from_pretrained(base_model, adapter_path)
+                classifier_tokenizer = tokenizer
+                logger.info("[ORCHESTRATOR] 어댑터 로드 완료")
+            else:
+                logger.warning("[ORCHESTRATOR] 어댑터를 찾을 수 없어 베이스 모델만 사용합니다.")
+                classifier_model = base_model
+                classifier_tokenizer = tokenizer
+
+            classifier_model.eval()
+            logger.info("[ORCHESTRATOR] KoELECTRA 분류기 어댑터 로드 완료")
+
+            # 질문 분류
+            logger.info("[ORCHESTRATOR] 질문 분류 시작...")
+            inputs = classifier_tokenizer(
+                question,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=512,
+            )
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                outputs = classifier_model(**inputs)
+                logits = outputs.logits
+                probs = torch.softmax(logits, dim=-1)
+                predicted_class = torch.argmax(probs, dim=-1).item()
+                confidence = probs[0][predicted_class].item()
+
+            # 라벨 매핑: 0=도메인 외, 1=정책 기반, 2=규칙 기반
+            label_map = {
+                0: "도메인 외 (OUT_OF_DOMAIN)",
+                1: "정책 기반 (POLICY_BASED)",
+                2: "규칙 기반 (RULE_BASED)",
+            }
+
+            predicted_label = label_map.get(predicted_class, f"Unknown ({predicted_class})")
+
+            # 각 클래스별 확률
+            prob_out_of_domain = probs[0][0].item()
+            prob_policy = probs[0][1].item()
+            prob_rule = probs[0][2].item()
+
+            # 결과 프린트
+            print(f"\n{'='*60}")
+            print(f"[PLAYER ORCHESTRATOR] 질문 분류 결과")
+            print(f"{'='*60}")
+            print(f"질문: {question}")
+            print(f"판단 결과: {predicted_label}")
+            print(f"신뢰도: {confidence:.2%}")
+            print(f"\n각 클래스별 확률:")
+            print(f"  - 도메인 외 (0): {prob_out_of_domain:.2%}")
+            print(f"  - 정책 기반 (1): {prob_policy:.2%}")
+            print(f"  - 규칙 기반 (2): {prob_rule:.2%}")
+            print(f"{'='*60}\n")
+
+            logger.info(f"[ORCHESTRATOR] 질문 분류 완료: {predicted_label} (신뢰도: {confidence:.2%})")
+
+            # 간단한 응답 반환
+            from datetime import datetime
+            result = {
+                "success": True,
+                "question": question,
+                "classification": {
+                    "label": predicted_class,
+                    "label_name": predicted_label,
+                    "confidence": float(confidence),
+                    "probabilities": {
+                        "out_of_domain": float(prob_out_of_domain),
+                        "policy_based": float(prob_policy),
+                        "rule_based": float(prob_rule),
+                    },
+                },
+                "message": f"질문 '{question}'을 받았습니다. 분류 결과: {predicted_label}",
+                "processed_at": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            logger.error(f"[ORCHESTRATOR] 분류기 로드/분류 실패: {e}", exc_info=True)
+            print(f"\n{'='*60}")
+            print(f"[PLAYER ORCHESTRATOR] 분류기 오류")
+            print(f"오류: {str(e)}")
+            print(f"{'='*60}\n")
+
+            # 오류 발생 시 기본 응답
+            from datetime import datetime
+            result = {
+                "success": False,
+                "question": question,
+                "error": str(e),
+                "message": f"질문 '{question}'을 받았지만 분류에 실패했습니다.",
+                "processed_at": datetime.now().isoformat(),
+            }
+
+        logger.info(f"[ORCHESTRATOR] 채팅 질문 처리 완료")
+
         return result

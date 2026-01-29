@@ -81,6 +81,7 @@ class ModelLoader:
         use_quantization: bool = True,
         device_map: str = "auto",
         trust_remote_code: bool = True,
+        local_files_only: bool = False,
     ) -> Tuple:
         """EXAONE 모델을 로드합니다.
 
@@ -109,6 +110,7 @@ class ModelLoader:
         tokenizer = AutoTokenizer.from_pretrained(
             model_path,
             trust_remote_code=trust_remote_code,
+            local_files_only=local_files_only,
         )
 
         # pad_token 설정
@@ -158,6 +160,7 @@ class ModelLoader:
             "trust_remote_code": trust_remote_code,
             "low_cpu_mem_usage": low_cpu_mem_usage,
             "use_safetensors": use_safetensors,
+            "local_files_only": local_files_only,
         }
         
         if torch_dtype is not None:

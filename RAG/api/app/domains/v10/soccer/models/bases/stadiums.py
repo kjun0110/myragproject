@@ -28,7 +28,7 @@ class Stadium(Base):
     """
 
 
-    __tablename__ = "stadium"
+    __tablename__ = "stadiums"
 
     # 기본 키
     id = Column(BigInteger, primary_key=True, nullable=False)  # 경기장 고유 ID (BigInt 타입)
@@ -47,5 +47,8 @@ class Stadium(Base):
     address = Column(String, nullable=True)  # 경기장 주소
     ddd = Column(String, nullable=True)  # 지역번호 (예: 063, 031, 054)
     tel = Column(String, nullable=True)  # 전화번호
+    
+    # Relationships
+    embeddings = relationship("StadiumEmbedding", back_populates="stadium", cascade="all, delete-orphan")
 
 

@@ -31,15 +31,15 @@ class Schedule(Base):
     """
 
 
-    __tablename__ = "schedule"
+    __tablename__ = "schedules"
 
     # 기본 키
     id = Column(BigInteger, primary_key=True, nullable=False)  # 경기 일정 고유 ID (BigInt 타입)
 
     # 외래 키
-    stadium_id = Column(BigInteger, nullable=True)  # 경기장 ID (FK -> stadium.id)
-    hometeam_id = Column(BigInteger, nullable=True)  # 홈팀 ID (FK -> team.id)
-    awayteam_id = Column(BigInteger, nullable=True)  # 원정팀 ID (FK -> team.id)
+    stadium_id = Column(BigInteger, ForeignKey("stadiums.id"), nullable=True)  # 경기장 ID (FK -> stadiums.id)
+    hometeam_id = Column(BigInteger, ForeignKey("teams.id"), nullable=True)  # 홈팀 ID (FK -> teams.id)
+    awayteam_id = Column(BigInteger, ForeignKey("teams.id"), nullable=True)  # 원정팀 ID (FK -> teams.id)
 
     # 경기장 정보
     stadium_code = Column(String, nullable=False)  # 경기장 코드 (예: C02, B04)
@@ -55,5 +55,8 @@ class Schedule(Base):
     # 경기 결과
     home_score = Column(Integer, nullable=True)  # 홈팀 득점 (경기 전이면 null)
     away_score = Column(Integer, nullable=True)  # 원정팀 득점 (경기 전이면 null)
+    
+    # Relationships
+    embeddings = relationship("ScheduleEmbedding", back_populates="schedule", cascade="all, delete-orphan")
 
 
