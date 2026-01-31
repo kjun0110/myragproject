@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from peft import PeftModel
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-from app.common.loaders import ModelLoader
+from app.core.loaders import ModelLoader
 from app.domains.v10.soccer.models.states.stadium_state import StadiumProcessingState
 
 logger = logging.getLogger(__name__)

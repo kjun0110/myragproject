@@ -72,3 +72,20 @@ To improve your LLM application development, pair LangChain with:
 - [API Reference](https://reference.langchain.com/python) – Detailed reference on navigating base packages and integrations for LangChain.
 - [Contributing Guide](https://docs.langchain.com/oss/python/contributing/overview) – Learn how to contribute to LangChain projects and find good first issues.
 - [Code of Conduct](https://github.com/langchain-ai/langchain/blob/master/.github/CODE_OF_CONDUCT.md) – Our community guidelines and standards for participation.
+
+---
+
+## 로컬 실행 (Windows / PowerShell)
+
+이 레포는 `api/` 아래가 파이썬 import 루트입니다.  
+**권장 방식은 실행 환경에서 `PYTHONPATH=api`를 설정**하는 것입니다(코드에서 `sys.path.insert`로 해결하지 않음).
+
+### 채팅 서버 실행 예시
+
+프로젝트 루트에서:
+
+```powershell
+$env:PYTHONPATH="api"
+python -m uvicorn app.mainbackup:app --reload --reload-dir api/app
+```
+

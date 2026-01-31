@@ -87,10 +87,6 @@ api/
 │   │       └── koelectra-small-v3-discriminator-spam-lora/
 │   │           └── {timestamp}/   # 타임스탬프별 체크포인트 저장
 │   │
-│   └── midm/                       ✅ MIDM 모델 (채팅 도메인 전용)
-│       └── midm/                   ✅ MIDM 베이스 모델
-│                                   # 채팅 서비스에서 사용되는 LLM 모델
-│
 └── app/
     ├── main.py                     ✅ [Entry Point] 채팅 서비스 서버 진입점
     │                               # FastAPI 앱 초기화, 채팅/그래프 라우터 통합
@@ -196,9 +192,8 @@ api/
     │   │   │   │                   # LangChain 기반 채팅 서비스
     │   │   │   ├── graph.py        ✅ LangGraph 기반 RAG 채팅 그래프
     │   │   │   │                   # 벡터 검색 + LLM을 통한 대화형 RAG
-    │   │   │   ├── model_loader.py ✅ MIDM/EXAONE 모델 로더
+    │   │   │   ├── model_loader.py ✅ EXAONE 모델 로더
     │   │   │   │                   # 전역 캐싱을 통한 모델 로드 관리
-    │   │   │   ├── midm_model.py   ✅ MIDM 모델 구현체
     │   │   │   └── exaone_model.py ✅ EXAONE 모델 구현체 (채팅용)
     │   │   │
     │   │   ├── services/           ✅ 채팅 서비스 로직 (규칙 기반)
@@ -334,7 +329,7 @@ class ChatOrchestrator(BaseOrchestrator):
 
 #### 1. 팩토리를 통한 오케스트레이터 사용
 ```python
-from app.common.orchestrator import OrchestratorFactory
+from app.common.orchestrator.factory import OrchestratorFactory
 
 # 스팸 분류 오케스트레이터 가져오기
 spam_orch = OrchestratorFactory.get("spam_classifier")
@@ -552,7 +547,7 @@ result = spam_orch.analyze("스팸 메시지 내용")
 
 ### 라우터에서 오케스트레이터 사용
 ```python
-from app.common.orchestrator import OrchestratorFactory
+from app.common.orchestrator.factory import OrchestratorFactory
 
 @router.post("/endpoint")
 async def endpoint(request: Request):

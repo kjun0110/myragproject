@@ -70,16 +70,16 @@ sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ### 6. LOCAL_MODEL_DIR (로컬 모델 사용 시)
 - **Name**: `LOCAL_MODEL_DIR`
 - **Value**: 로컬 모델 경로
-- **설명**: 로컬 Midm 모델을 사용하는 경우
+- **설명**: 로컬 EXAONE 모델을 사용하는 경우
 
 예시:
 ```
-api/app/model/midm
+api/artifacts/exaone/exaone3.5-2.4b
 ```
 
 또는 HuggingFace 모델:
 ```
-K-intelligence/Midm-2.0-Mini-Instruct
+LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
 ```
 
 ## 설정 확인

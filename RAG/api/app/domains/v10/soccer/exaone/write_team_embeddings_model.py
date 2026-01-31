@@ -19,7 +19,7 @@ app_dir = current_file.parents[4]  # api/app/
 api_dir = app_dir.parent  # api/
 sys.path.insert(0, str(api_dir))
 
-from app.common.loaders import ModelLoader
+from app.core.loaders import ModelLoader
 
 logger = logging.getLogger(__name__)
 

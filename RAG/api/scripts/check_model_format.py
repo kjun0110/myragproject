@@ -19,7 +19,7 @@ api_dir = scripts_dir.parent  # api/
 
 sys.path.insert(0, str(api_dir))
 
-from app.common.loaders import ModelLoader
+from app.core.loaders import ModelLoader
 
 
 def check_model_format(model_id: str):

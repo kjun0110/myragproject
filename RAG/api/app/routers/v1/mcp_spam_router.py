@@ -23,8 +23,8 @@ api_dir = app_dir.parent  # api/
 sys.path.insert(0, str(api_dir))
 
 # 스키마 import
-# 오케스트레이터 import
-from app.common.orchestrator import OrchestratorFactory
+# 오케스트레이터 import (명시적 import로 순환참조 위험 감소)
+from app.common.orchestrator.factory import OrchestratorFactory
 from app.domains.v1.spam_classifier.models.base_model import (
     GateRequest,
     GateResponse,

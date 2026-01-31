@@ -6,9 +6,9 @@ POST /api/graph
 LangGraph를 사용한 대화형 응답 반환 (스트리밍).
 """
 
-# 스키마 import
 import re
-from app.domains.v1.chat.models.base_model import GraphRequest, GraphResponse
+# 스키마 import
+from app.domains.v1.chat.models.transfers.base_model import GraphRequest, GraphResponse
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -42,7 +42,7 @@ async def graph_chat(request: GraphRequest, http_request: Request):
 
     try:
         # graph import (lazy loading이므로 모델은 실제 사용 시 로드됨)
-        from app.domains.v1.chat.agents.graph import graph
+        from app.domains.v1.chat.spokes.agents.graph import graph
 
         # 대화 기록을 LangChain 메시지 형식으로 변환
         messages = [

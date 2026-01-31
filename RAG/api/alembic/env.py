@@ -56,7 +56,7 @@ target_metadata = Base.metadata
 
 def get_url():
     """데이터베이스 URL을 동적으로 가져옵니다."""
-    from app.common.config.config import get_settings
+    from app.core.config.config import get_settings
     
     settings = get_settings()
     database_url = settings.connection_string

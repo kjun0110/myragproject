@@ -29,12 +29,9 @@ except ImportError:
 # 프로젝트 루트를 Python 경로에 추가
 sys.path.insert(0, str(api_dir))
 
-# 공통 모듈 import
-from app.common.database.vector_store import (
-    COLLECTION_NAME,
-    CONNECTION_STRING,
-    wait_for_postgres,
-)
+# 코어 설정/스토어(인프라) 모듈 import
+from app.core.config import get_settings
+from app.core.store.pgvector_store import wait_for_postgres
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -79,11 +76,12 @@ async def startup_event():
 
     # 2. ChatService 초기화
     print("\n2. ChatService 초기화 중...")
-    from app.domains.v1.chat.agents.chat_service import ChatService
+    from app.domains.v1.chat.spokes.agents.chat_service import ChatService
 
+    settings = get_settings()
     chat_service = ChatService(
-        connection_string=CONNECTION_STRING,
-        collection_name=COLLECTION_NAME,
+        connection_string=settings.connection_string,
+        collection_name=settings.collection_name,
         model_name_or_path=local_model_dir
         if local_model_dir != "기본값 사용"
         else None,
@@ -97,9 +95,11 @@ async def startup_event():
     print("\n4. LLM 모델 초기화 중...")
     chat_service.initialize_llm()
 
-    # 5. PGVector 스토어 초기화
+    # 5. PGVector 스토어 초기화(선택)
+    # - 프로덕션에서는 보통 별도 스크립트(api/scripts/init_pgvector.py)로 시딩
+    # - 여기서는 기존 동작 호환을 위해 유지
     print("\n5. PGVector 스토어 초기화 중...")
-    from app.common.database.vector_store import initialize_vector_store
+    from app.core.store.vector_store import initialize_vector_store
 
     initialize_vector_store()
 
@@ -110,7 +110,7 @@ async def startup_event():
     # 7. Exaone 모델 사전 로드 (LangGraph용)
     print("\n7. Exaone3.5 모델 사전 로드 중...")
     try:
-        from app.domains.v1.chat.agents.graph import preload_exaone_model
+        from app.domains.v1.chat.spokes.agents.graph import preload_exaone_model
 
         preload_exaone_model()
     except Exception as e:

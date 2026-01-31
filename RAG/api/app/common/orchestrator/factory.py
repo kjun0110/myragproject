@@ -4,18 +4,7 @@
 도메인에 맞는 오케스트레이터를 생성/반환합니다.
 """
 
-import sys
-from pathlib import Path
 from typing import Optional, Dict, Type
-
-# 프로젝트 루트를 Python 경로에 추가
-current_file = Path(__file__).resolve()
-orchestrator_dir = current_file.parent  # api/app/common/orchestrator/
-common_dir = orchestrator_dir.parent  # api/app/common/
-app_dir = common_dir.parent  # api/app/
-api_dir = app_dir.parent  # api/
-
-sys.path.insert(0, str(api_dir))
 
 from .base_orchestrator import BaseOrchestrator
 
@@ -110,7 +99,7 @@ def _register_domain_orchestrators():
         print(f"[WARNING] spam_classifier 오케스트레이터 로드 실패: {e}")
 
     try:
-        from app.domains.v1.chat.orchestrator import ChatOrchestrator
+        from app.domains.v1.chat.hub.orchestrators import ChatOrchestrator
         OrchestratorFactory.register("chat", ChatOrchestrator)
         print("[INFO] chat 오케스트레이터 등록 완료")
     except ImportError as e:

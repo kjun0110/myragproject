@@ -38,7 +38,7 @@ api_dir = training_dir.parent  # api/
 
 sys.path.insert(0, str(api_dir))
 
-from app.common.loaders import ModelLoader
+from app.core.loaders import ModelLoader
 
 
 def load_koelectra_model(num_labels: int = 3):
@@ -604,7 +604,7 @@ def main():
     print("=" * 60)
     print(f"\nLoRA 어댑터 경로: {adapter_path}")
     print("\n사용 방법:")
-    print("  from app.common.loaders import ModelLoader")
+    print("  from app.core.loaders import ModelLoader")
     print("  ")
     print("  model, tokenizer = ModelLoader.load_koelectra_model(")
     print("      adapter_name='koelectra_classifier',")

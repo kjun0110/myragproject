@@ -110,7 +110,7 @@ TRANSFORMERS_CACHE=D:/ssd_cache/huggingface
 
 ```python
 # main.py 또는 mainbackup.py에서
-from app.common.loaders import ModelLoader
+from app.core.loaders import ModelLoader
 
 # 애플리케이션 시작 시 모델 사전 로드
 @app.on_event("startup")

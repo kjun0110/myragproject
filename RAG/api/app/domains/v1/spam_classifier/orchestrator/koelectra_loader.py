@@ -18,8 +18,8 @@ api_dir = app_dir.parent  # api/
 
 sys.path.insert(0, str(api_dir))
 
-# 공통 모델 로더 사용
-from app.common.loaders import load_koelectra_with_spam_adapter
+# 애플리케이션 공통 프리셋(스팸 아답터 결합)
+from app.common.presets.model_presets import load_koelectra_with_spam_adapter
 
 # 전역 캐싱
 _koelectra_model = None

@@ -29,7 +29,7 @@ def load_koelectra_model():
     print("=" * 60)
 
     # 공통 모델 로더 사용 (HuggingFace 캐시 활용)
-    from app.common.loaders import ModelLoader
+    from app.core.loaders import ModelLoader
 
     print("\n[INFO] HuggingFace 캐시를 활용하여 베이스 모델 로드")
     print(f"[INFO] 모델 ID: {ModelLoader.KOELECTRA_MODEL_ID}")

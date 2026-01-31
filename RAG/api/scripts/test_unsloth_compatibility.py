@@ -67,7 +67,7 @@ except ImportError as e:
 print("\n[3단계] EXAONE 모델 정보 확인")
 print("-" * 60)
 
-from app.common.loaders import ModelLoader
+from app.core.loaders import ModelLoader
 
 model_id = ModelLoader.EXAONE_MODEL_ID
 print(f"모델 ID: {model_id}")

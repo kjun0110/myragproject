@@ -37,7 +37,7 @@ Repository → Settings → Secrets and variables → Actions에서 다음 Secre
 #### 선택적 Secrets
 
 - **OPENAI_API_KEY**: OpenAI API 키 (OpenAI 모델 사용 시)
-- **LOCAL_MODEL_DIR**: 로컬 모델 경로 (예: `api/app/model/midm`)
+- **LOCAL_MODEL_DIR**: 로컬 모델 경로 (예: `api/artifacts/exaone/exaone3.5-2.4b`)
 
 ### 2. EC2 인스턴스 초기 설정
 

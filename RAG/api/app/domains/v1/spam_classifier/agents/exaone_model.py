@@ -47,7 +47,7 @@ class ExaoneLLM(BaseLLM):
         self.model_path = model_path
         # model_id가 제공되지 않으면 ModelLoader의 기본 모델 ID 사용
         if model_id is None:
-            from app.common.loaders import ModelLoader
+            from app.core.loaders import ModelLoader
             self.model_id = ModelLoader.EXAONE_MODEL_ID
         else:
             self.model_id = model_id
@@ -77,7 +77,7 @@ class ExaoneLLM(BaseLLM):
         print(f"[INFO] Exaone 모델 로드 중...")
 
         # 공통 모델 로더 사용 (HuggingFace 캐시 활용)
-        from app.common.loaders import ModelLoader
+        from app.core.loaders import ModelLoader
 
         # 양자화 여부 결정
         use_quantization = self.dtype in ["auto", "float16", "bfloat16"]

@@ -29,7 +29,6 @@ def resolve_model_path(
         해석된 모델 경로 (문자열), 없으면 None
 
     Example:
-        >>> path = resolve_model_path("LOCAL_MODEL_DIR", Path("artifacts/midm/midm"))
         >>> path = resolve_model_path("EXAONE_MODEL_DIR", Path("artifacts/exaone/exaone3.5-2.4b"))
     """
     # 프로젝트 루트 (api/) 계산

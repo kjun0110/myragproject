@@ -49,7 +49,7 @@ if not root_logger.handlers:
 logger = logging.getLogger(__name__)
 
 # Config import
-from app.common.config.config import get_settings
+from app.core.config.config import get_settings
 
 # 비동기 컨텍스트 매니저, 데이터베이스 초기화
 @asynccontextmanager

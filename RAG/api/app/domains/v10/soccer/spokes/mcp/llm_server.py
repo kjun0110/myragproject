@@ -40,7 +40,7 @@ class ExaOneRuntime:
             return
         try:
             logger.info("[LLM MCP] ExaOne 모델 로드 시작...")
-            from app.common.loaders import ModelLoader
+            from app.core.loaders import ModelLoader
 
             self.model, self.tokenizer = ModelLoader.load_exaone_model(
                 adapter_name=None,

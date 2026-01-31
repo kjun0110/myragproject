@@ -57,8 +57,8 @@ def load_koelectra_gate() -> tuple:
     try:
         print("[INFO] KoELECTRA 게이트웨이 모델 로딩 시작...")
 
-        # 공통 모델 로더 사용 (HuggingFace 캐시 + 로컬 아답터)
-        from app.common.loaders import load_koelectra_with_spam_adapter
+        # 애플리케이션 공통 프리셋 사용 (HuggingFace 캐시 + 로컬 아답터)
+        from app.common.presets.model_presets import load_koelectra_with_spam_adapter
 
         _koelectra_model, _koelectra_tokenizer = load_koelectra_with_spam_adapter()
 
