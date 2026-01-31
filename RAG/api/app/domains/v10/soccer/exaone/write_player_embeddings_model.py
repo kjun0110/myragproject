@@ -131,32 +131,68 @@ def generate_player_embeddings_py(
     EXAONE에게 '파일 전체' 파이썬 코드만 출력하게 시킨다.
     """
     # EXAONE 출력 안정성을 위해 "템플릿을 그대로 채우게" 강제
-    template = f'''"""PlayerEmbedding 모델 (자동 생성)
+    #
+    # NOTE:
+    # - 본 프로젝트의 schedule_embeddings.py가 "엔진/세션 + create_vector_type + declarative_base" 형태로 작성되어 있어
+    #   player_embeddings.py도 동일한 스타일로 생성되도록 템플릿을 맞춥니다.
+    # - (일반적으로 모델 파일에 엔진/세션을 두지 않는 편이지만, 사용자의 요청에 따라 형식을 맞춥니다.)
+    template = f'''"""
+{model_class_name} 모델 정의
 
-players 테이블을 기반으로 한 임베딩 테이블 모델입니다.
+ERD 기반 SQLAlchemy 모델 정의.
 """
 
-from sqlalchemy import BigInteger, Column, ForeignKey, Text
+from sqlalchemy import BigInteger, Column, ForeignKey, Text, TIMESTAMP
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.types import TIMESTAMP
-
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from pgvector import create_vector_type
 from pgvector.sqlalchemy import Vector
 
-from app.domains.v10.shared.models.bases.base import Base
+# SQLAlchemy 엔진 생성
+engine = create_engine('postgresql://username:password@localhost:5432/database_name')
+Session = sessionmaker(bind=engine)
+session = Session()
+
+# Vector 타입 생성
+VectorType = create_vector_type(engine, Vector({dim}))
+
+# Base 클래스 정의
+Base = declarative_base()
 
 
 class {model_class_name}(Base):
+    """
+    선수 임베딩 모델 클래스.
+
+    ERD 기반 SQLAlchemy 모델 정의.
+    """
+
     __tablename__ = "{table_name}"
 
+    # 기본 키
     id = Column(BigInteger, primary_key=True, autoincrement=True, nullable=False)
+
+    # 외래 키
     player_id = Column(BigInteger, ForeignKey("players.id", ondelete="CASCADE"), nullable=False)
 
+    # 임베딩 내용
     content = Column(Text, nullable=False)
-    embedding = Column(Vector({dim}), nullable=False)
+
+    # 벡터 임베딩
+    embedding = Column(VectorType, nullable=False)
+
+    # 생성 시간
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
 
+    # 관계 설정
     player = relationship("Player", back_populates="embeddings")
+
+
+# 엔진 종료
+session.close()
 '''
 
     prompt = (
@@ -167,7 +203,8 @@ class {model_class_name}(Base):
         "- 출력은 오직 `player_embeddings.py` 파일의 '전체 내용'만 출력한다.\n"
         "- 설명/마크다운/코드펜스(``` ) 금지. 파일 내용만.\n"
         "- 반드시 아래 템플릿을 그대로 사용하되, 필요한 경우에만 최소 수정한다.\n"
-        "- 특히 import 경로, tablename, FK, Vector 차원은 유지한다.\n"
+        "- 템플릿의 전반적인 스타일(엔진/세션/VectorType/declaraive_base 구성)은 유지한다.\n"
+        "- 특히 tablename, FK, Vector 차원은 유지한다.\n"
         "- SQLAlchemy ORM 스타일로 작성한다.\n"
         f"- 테이블명은 `{table_name}`\n"
         f"- 모델 클래스명은 `{model_class_name}`\n"
@@ -175,7 +212,7 @@ class {model_class_name}(Base):
         "  - id: BigInteger PK, autoincrement, not null\n"
         "  - player_id: BigInteger FK -> players.id, ondelete CASCADE, not null\n"
         "  - content: Text, not null\n"
-        f"  - embedding: Vector({dim}), not null\n"
+        f"  - embedding: VectorType(내부적으로 Vector({dim})를 기반), not null\n"
         "  - created_at: timezone-aware timestamp, server_default now(), not null\n"
         "- relationship: Player.embeddings <-> PlayerEmbedding.player back_populates 로 연결\n"
         "\n"

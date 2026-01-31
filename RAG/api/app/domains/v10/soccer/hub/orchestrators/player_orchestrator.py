@@ -34,12 +34,12 @@ class PlayerOrchestrator:
         self.device = None
         self._load_model()
 
-        # PlayerAgent 한 번 생성 (ExaOne 로드 포함, MCP 툴 및 정책 처리에서 공유)
+        # PlayerAgent 한 번 생성 (⚠️ LLM은 별도 LLM MCP 서버에서 1회 로드하여 공유)
         from app.domains.v10.soccer.spokes.agents.player_agent import PlayerAgent
 
         self._player_agent = PlayerAgent()
 
-        # MCP 연결: 오케스트레이터에서 FastMCP 생성 (순서: 오케스트레이터(KoELECTRA) → 에이전트(ExaOne))
+        # MCP 연결: 오케스트레이터에서 FastMCP 생성 (KoELECTRA 판단 툴만 제공)
         self.mcp = self._build_mcp()
 
         # LangGraph 빌드
@@ -92,13 +92,14 @@ class PlayerOrchestrator:
             )
 
     def _build_mcp(self) -> Any:
-        """FastMCP 서버를 생성하고 KoELECTRA·ExaOne 툴을 등록합니다.
+        """FastMCP 서버를 생성하고 KoELECTRA 툴만 등록합니다.
 
-        프론트 흐름 순서: 오케스트레이터(KoELECTRA) → 에이전트(ExaOne).
+        ⚠️ LLM(ExaOne)은 `spokes/mcp/llm_server.py`에서만 1회 로드/운영합니다.
+        이 오케스트레이터는 무거운 LLM 추론을 직접 수행하지 않습니다.
         """
         from fastmcp import FastMCP
 
-        mcp = FastMCP("Player MCP (KoELECTRA + ExaOne)")
+        mcp = FastMCP("Player MCP (KoELECTRA Only)")
         orch = self
 
         # 1) 오케스트레이터: KoELECTRA 툴 (프론트에서 먼저 오는 단계)
@@ -113,20 +114,6 @@ class PlayerOrchestrator:
                 JSON 문자열: {"strategy": "policy"|"rule", "confidence": float}
             """
             return orch._koelectra_classify_tool(text)
-
-        # 2) 에이전트: ExaOne 툴 (프론트 흐름상 다음 단계)
-        @mcp.tool
-        def exaone_generate(prompt: str, max_new_tokens: int = 256) -> str:
-            """ExaOne로 프롬프트에 대한 텍스트를 생성합니다.
-
-            Args:
-                prompt: 입력 프롬프트
-                max_new_tokens: 최대 생성 토큰 수 (기본 256)
-
-            Returns:
-                생성된 텍스트 (모델 미로드 시 빈 문자열)
-            """
-            return orch._player_agent.exaone_generate(prompt, max_new_tokens=max_new_tokens)
 
         return mcp
 
@@ -210,7 +197,7 @@ class PlayerOrchestrator:
         """전략 판단 노드."""
         logger.info("[ORCHESTRATOR] 전략 판단 노드 시작")
 
-        records = state.get('validated_records', state['records'])
+        records = state.get("validated_records") or state["records"]
 
         # 휴리스틱 판단
         heuristic_result = self._determine_strategy_heuristic(records)
@@ -254,7 +241,7 @@ class PlayerOrchestrator:
 
         try:
             agent = self._player_agent
-            records = state.get('validated_records', state['records'])
+            records = state.get("validated_records") or state["records"]
             result = await agent.process(records)
 
             logger.info("[ORCHESTRATOR] 정책 기반 처리 완료")
@@ -279,7 +266,7 @@ class PlayerOrchestrator:
             from app.domains.v10.soccer.spokes.services.player_service import PlayerService
 
             service = PlayerService()
-            records = state.get('validated_records', state['records'])
+            records = state.get("validated_records") or state["records"]
             result = await service.process(records)
 
             logger.info("[ORCHESTRATOR] 규칙 기반 처리 완료")
@@ -385,6 +372,9 @@ class PlayerOrchestrator:
     ) -> tuple[str, float]:
         """KoELECTRA를 사용하여 전략을 판단하고 신뢰도도 반환합니다."""
         try:
+            if self.model is None or self.tokenizer is None or self.device is None:
+                raise RuntimeError("KoELECTRA 미로드")
+
             # 레코드들을 텍스트로 변환 (샘플 데이터 사용)
             sample_records = records[:5]  # 처음 5개만 사용
             text_data = json.dumps(sample_records, ensure_ascii=False)
