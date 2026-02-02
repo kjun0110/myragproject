@@ -6,7 +6,7 @@ LangGraph를 사용한 Schedule 데이터 처리 상태를 정의합니다.
 
 from typing import Any, Dict, List, Optional, TypedDict
 
-from app.domains.v10.soccer.models.states.base_state import BaseProcessingState
+from app.domains.v10.shared.models.states.base_state import BaseProcessingState
 
 
 class ScheduleProcessingState(BaseProcessingState):

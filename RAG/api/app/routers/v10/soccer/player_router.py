@@ -23,6 +23,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v10/soccer/player", tags=["Player"])
 
 
+@router.get("/embed")
+async def trigger_player_embedding() -> JSONResponse:
+    """Player 임베딩 생성 트리거.
+
+    현재는 UI에서 "임베딩 실행" 명령을 백엔드로 전달하기 위한 엔드포인트입니다.
+    (실제 임베딩 생성/적재 파이프라인은 추후 `hub/services` 또는 별도 배치로 구현 권장)
+    """
+    logger.info("[ROUTER] Player 임베딩 트리거 호출")
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "success": True,
+            "message": "임베딩 트리거 요청을 수신했습니다. (실제 생성 로직은 추후 구현)",
+        },
+    )
+
+
 @router.post("/upload")
 async def upload_player_jsonl(
     file: UploadFile = File(...),

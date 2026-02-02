@@ -6,6 +6,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import text
 
 from alembic import context
 
@@ -114,6 +115,9 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         include_object=include_object,  # 기존 테이블 보호
+        # Neon/role 환경에서 search_path가 달라져도 버전 테이블은 public로 고정
+        version_table="alembic_version",
+        version_table_schema="public",
     )
 
     with context.begin_transaction():
@@ -137,10 +141,32 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        # search_path를 public로 고정 (테이블이 다른 스키마에 생기는 문제 방지)
+        # - Neon/role 설정에 따라 기본 search_path가 "$user", public 처럼 바뀌어
+        #   create_table이 public이 아닌 스키마로 들어갈 수 있습니다.
+        connection.execute(text("SET search_path TO public"))
+
+        # pgvector extension 보장 (임베딩 테이블에서 vector 타입 사용)
+        # - 실패 시 조용히 넘어가면 이후 마이그레이션이 "적용된 것처럼 보이지만 실제로는 롤백"
+        #   되는 케이스를 추적하기 어렵습니다. 실패하면 그대로 에러를 노출합니다.
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+        # 위 2개 실행으로 SQLAlchemy가 트랜잭션을 autobegin 할 수 있습니다.
+        # 이 상태로 Alembic이 별도 트랜잭션을 시작하지 못하면(이미 트랜잭션이 열려있다고 판단)
+        # 마이그레이션 전체가 커밋되지 않고 커넥션 종료 시 롤백되는 현상이 발생할 수 있어,
+        # 여기서 명시적으로 커밋하여 트랜잭션을 닫습니다.
+        try:
+            connection.commit()
+        except Exception:
+            pass
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
             include_object=include_object,  # 기존 테이블 보호
+            # Neon/role 환경에서 search_path가 달라져도 버전 테이블은 public로 고정
+            version_table="alembic_version",
+            version_table_schema="public",
         )
 
         with context.begin_transaction():

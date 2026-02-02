@@ -355,6 +355,19 @@ def _register_routers(app_instance):
     except Exception as e:
         logger.error(f"[ERROR] Soccer Chat 라우터 등록 실패: {e}")
 
+    # Auth 라우터 (JWT 발급 + Redis/BullMQ 연동용)
+    try:
+        from app.routers.shared.auth_router import router as auth_router  # type: ignore
+
+        app_instance.include_router(auth_router)
+        logger.info("[✓] Auth 라우터 등록 완료: /api/v1/auth")
+    except ImportError as e:
+        logger.warning(f"[WARNING] Auth 라우터 import 실패: {e}")
+    except AttributeError as e:
+        logger.warning(f"[WARNING] Auth 라우터 속성 오류: {e}")
+    except Exception as e:
+        logger.error(f"[ERROR] Auth 라우터 등록 실패: {e}")
+
 # 루트 엔드포인트
 @app.get("/")
 async def root():

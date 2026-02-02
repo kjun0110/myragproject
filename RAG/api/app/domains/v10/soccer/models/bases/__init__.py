@@ -8,7 +8,10 @@ from .stadiums import Stadium
 from .teams import Team
 from .schedules import Schedule
 from .players import Player
-from .embeddings import PlayerEmbedding, TeamEmbedding, StadiumEmbedding, ScheduleEmbedding
+from .player_embeddings import PlayerEmbedding
+from .team_embeddings import TeamEmbedding
+from .stadium_embeddings import StadiumEmbedding
+from .schedule_embeddings import ScheduleEmbedding
 
 __all__ = [
     "Base",

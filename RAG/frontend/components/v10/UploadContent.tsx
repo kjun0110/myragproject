@@ -20,9 +20,10 @@ interface UploadState {
 
 interface UploadContentProps {
   itemType: ItemType;
+  extraActions?: React.ReactNode;
 }
 
-export default function UploadContent({ itemType }: UploadContentProps) {
+export default function UploadContent({ itemType, extraActions }: UploadContentProps) {
   const [uploadState, setUploadState] = useState<UploadState>({
     file: null,
     isDragging: false,
@@ -281,6 +282,8 @@ export default function UploadContent({ itemType }: UploadContentProps) {
         {uploadState.isUploading ? "업로드 중..." : "업로드"}
       </button>
 
+      {extraActions ? <div className="extra-actions">{extraActions}</div> : null}
+
       <style jsx>{`
         .upload-content {
           flex: 1;
@@ -510,6 +513,10 @@ export default function UploadContent({ itemType }: UploadContentProps) {
         .upload-button:disabled {
           opacity: 0.5;
           cursor: not-allowed;
+        }
+
+        .extra-actions {
+          margin-top: 0.75rem;
         }
 
         @media (max-width: 768px) {
