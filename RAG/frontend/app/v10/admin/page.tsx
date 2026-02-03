@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 interface Match {
   id: string;
@@ -44,14 +44,8 @@ interface Member {
 }
 
 export default function StudyPage() {
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"dashboard" | "tickets" | "betting" | "products" | "members">("dashboard");
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-
-  // 파일 업로드 버튼 클릭 핸들러
-  const handleUploadClick = () => {
-    router.push("/v10/admin/upload");
-  };
 
   // 파일 삭제 핸들러
   const handleFileRemove = (index: number) => {
@@ -278,50 +272,56 @@ export default function StudyPage() {
         <div className="header-content">
           <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold">⚽ 축구 경기 관리 어드민 대시보드</h1>
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* 파일 업로드 버튼 - 데스크톱: 텍스트 포함, 모바일: 아이콘만 */}
-            <button
-              onClick={handleUploadClick}
+            <Link
+              href="/v10/admin/upload"
+              prefetch={false}
               className="upload-button flex items-center gap-2 px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm sm:text-base"
               aria-label="파일 업로드"
             >
               <span className="text-lg sm:text-xl">📁</span>
               <span className="hidden sm:inline">파일 업로드</span>
-            </button>
-            <button
+            </Link>
+            <Link
+              href="/"
+              prefetch={false}
               className="home-button flex items-center gap-2 px-3 sm:px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors text-sm sm:text-base"
-              onClick={() => router.push("/")}
             >
               <span className="text-lg sm:text-xl">🏠</span>
               <span className="hidden sm:inline">홈으로</span>
-            </button>
+            </Link>
           </div>
         </div>
         <div className="tab-selector">
           <button
+            type="button"
             className={`tab-button ${activeTab === "dashboard" ? "active" : ""}`}
             onClick={() => setActiveTab("dashboard")}
           >
             📊 대시보드
           </button>
           <button
+            type="button"
             className={`tab-button ${activeTab === "tickets" ? "active" : ""}`}
             onClick={() => setActiveTab("tickets")}
           >
             🎫 경기 표 예매
           </button>
           <button
+            type="button"
             className={`tab-button ${activeTab === "betting" ? "active" : ""}`}
             onClick={() => setActiveTab("betting")}
           >
             🎲 배팅 시스템
           </button>
           <button
+            type="button"
             className={`tab-button ${activeTab === "products" ? "active" : ""}`}
             onClick={() => setActiveTab("products")}
           >
             🛍️ 상품 관리
           </button>
           <button
+            type="button"
             className={`tab-button ${activeTab === "members" ? "active" : ""}`}
             onClick={() => setActiveTab("members")}
           >
@@ -374,7 +374,7 @@ export default function StudyPage() {
               <div className="dashboard-section">
                 <div className="section-header">
                   <h3>📅 최근 경기</h3>
-                  <button className="view-all-button" onClick={() => setActiveTab("tickets")}>
+                  <button type="button" className="view-all-button" onClick={() => setActiveTab("tickets")}>
                     전체 보기 →
                   </button>
                 </div>
@@ -407,7 +407,7 @@ export default function StudyPage() {
               <div className="dashboard-section">
                 <div className="section-header">
                   <h3>🛍️ 인기 상품</h3>
-                  <button className="view-all-button" onClick={() => setActiveTab("products")}>
+                  <button type="button" className="view-all-button" onClick={() => setActiveTab("products")}>
                     전체 보기 →
                   </button>
                 </div>
@@ -433,7 +433,7 @@ export default function StudyPage() {
               <div className="dashboard-section">
                 <div className="section-header">
                   <h3>👥 최근 가입 회원</h3>
-                  <button className="view-all-button" onClick={() => setActiveTab("members")}>
+                  <button type="button" className="view-all-button" onClick={() => setActiveTab("members")}>
                     전체 보기 →
                   </button>
                 </div>
@@ -463,7 +463,7 @@ export default function StudyPage() {
               <div className="dashboard-section">
                 <div className="section-header">
                   <h3>🎲 활성 배팅</h3>
-                  <button className="view-all-button" onClick={() => setActiveTab("betting")}>
+                  <button type="button" className="view-all-button" onClick={() => setActiveTab("betting")}>
                     전체 보기 →
                   </button>
                 </div>
@@ -556,12 +556,14 @@ export default function StudyPage() {
                           </label>
                           <div className="button-group">
                             <button
+                              type="button"
                               className="purchase-button"
                               onClick={() => handleTicketPurchase(match.id)}
                             >
                               예매하기 ({(match.price * ticketQuantity).toLocaleString()}원)
                             </button>
                             <button
+                              type="button"
                               className="cancel-button"
                               onClick={() => {
                                 setSelectedMatch(null);
@@ -574,6 +576,7 @@ export default function StudyPage() {
                         </div>
                       ) : (
                         <button
+                          type="button"
                           className="select-button"
                           onClick={() => setSelectedMatch(match.id)}
                         >
@@ -637,7 +640,7 @@ export default function StudyPage() {
                       </div>
                     </div>
                     <div className="betting-actions">
-                      <button className="bet-button">배팅하기</button>
+                      <button type="button" className="bet-button">배팅하기</button>
                     </div>
                   </div>
                 );
@@ -716,7 +719,7 @@ export default function StudyPage() {
                     />
                   </label>
                 </div>
-                <button className="add-button" onClick={handleAddProduct}>
+                <button type="button" className="add-button" onClick={handleAddProduct}>
                   상품 추가
                 </button>
               </div>
@@ -742,8 +745,8 @@ export default function StudyPage() {
                         <p>📦 재고: {product.stock}개</p>
                       </div>
                       <div className="product-actions">
-                        <button className="edit-button">수정</button>
-                        <button className="delete-button">삭제</button>
+                        <button type="button" className="edit-button">수정</button>
+                        <button type="button" className="delete-button">삭제</button>
                       </div>
                     </div>
                   ))}
@@ -812,7 +815,7 @@ export default function StudyPage() {
                     </select>
                   </label>
                 </div>
-                <button className="add-button" onClick={handleAddMember}>
+                <button type="button" className="add-button" onClick={handleAddMember}>
                   회원 추가
                 </button>
               </div>
@@ -851,8 +854,8 @@ export default function StudyPage() {
                           <td>{member.joinDate}</td>
                           <td>{member.totalSpent.toLocaleString()}원</td>
                           <td>
-                            <button className="edit-button">수정</button>
-                            <button className="delete-button">삭제</button>
+                            <button type="button" className="edit-button">수정</button>
+                            <button type="button" className="delete-button">삭제</button>
                           </td>
                         </tr>
                       ))}
@@ -892,7 +895,12 @@ export default function StudyPage() {
           font-size: 1.8rem;
         }
 
-        /* 파일 업로드 버튼 - Tailwind와 styled-jsx 혼용 */
+        /* 파일 업로드 / 홈으로 - Link로 이동(hydration 방지) */
+        .upload-button,
+        .home-button {
+          display: inline-flex;
+          text-decoration: none;
+        }
         .upload-button {
           min-height: 44px;
           min-width: 44px;

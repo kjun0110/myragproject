@@ -18,17 +18,27 @@ interface UploadState {
   error: string | null;
 }
 
-interface UploadContentProps {
-  itemType: ItemType;
-  extraActions?: React.ReactNode;
+interface EmbedState {
+  isEmbedding: boolean;
+  message: string | null;
+  error: string | null;
 }
 
-export default function UploadContent({ itemType, extraActions }: UploadContentProps) {
+interface UploadContentProps {
+  itemType: ItemType;
+}
+
+export default function UploadContent({ itemType }: UploadContentProps) {
   const [uploadState, setUploadState] = useState<UploadState>({
     file: null,
     isDragging: false,
     isUploading: false,
     uploadResult: null,
+    error: null,
+  });
+  const [embedState, setEmbedState] = useState<EmbedState>({
+    isEmbedding: false,
+    message: null,
     error: null,
   });
 
@@ -133,11 +143,21 @@ export default function UploadContent({ itemType, extraActions }: UploadContentP
       } else {
         throw new Error(`지원하지 않는 아이템 타입: ${itemType}`);
       }
-      
-      const response = await fetch(apiEndpoint, {
-        method: "POST",
-        body: formData,
-      });
+
+      // 타임아웃 30초 (백엔드 미실행 시 무한 대기 방지)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
+      let response: Response;
+      try {
+        response = await fetch(apiEndpoint, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const result = await response.json();
 
@@ -167,10 +187,15 @@ export default function UploadContent({ itemType, extraActions }: UploadContentP
         }));
       }
     } catch (error) {
+      const isAbort = error instanceof Error && error.name === "AbortError";
       setUploadState((prev) => ({
         ...prev,
         isUploading: false,
-        error: error instanceof Error ? error.message : "업로드 중 오류가 발생했습니다.",
+        error: isAbort
+          ? "요청 시간이 초과되었습니다. 백엔드 서버(port 8000)가 실행 중인지 확인해주세요."
+          : error instanceof Error
+            ? error.message
+            : "업로드 중 오류가 발생했습니다.",
       }));
     }
   }, [uploadState.file, itemType]);
@@ -183,6 +208,87 @@ export default function UploadContent({ itemType, extraActions }: UploadContentP
       uploadResult: null,
     }));
   }, []);
+
+  const handleEmbed = useCallback(async () => {
+    if (itemType !== "player") return;
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    const baseUrl = `${backendUrl.replace(/\/$/, "")}/api/v10/soccer/player`;
+    setEmbedState((prev) => ({ ...prev, isEmbedding: true, message: null, error: null }));
+    try {
+      const createRes = await fetch(`${baseUrl}/embed`, { method: "POST" });
+      const createData = await createRes.json().catch(() => ({}));
+      if (!createRes.ok) {
+        setEmbedState((prev) => ({
+          ...prev,
+          isEmbedding: false,
+          message: null,
+          error: createData.error || "임베딩 작업 등록에 실패했습니다.",
+        }));
+        return;
+      }
+      const jobId = createData.job_id;
+      if (!jobId) {
+        setEmbedState((prev) => ({
+          ...prev,
+          isEmbedding: false,
+          message: null,
+          error: "job_id를 받지 못했습니다.",
+        }));
+        return;
+      }
+      const pollInterval = 2000;
+      const maxAttempts = 120;
+      let attempts = 0;
+      while (attempts < maxAttempts) {
+        await new Promise((r) => setTimeout(r, pollInterval));
+        const statusRes = await fetch(`${baseUrl}/embed/status/${jobId}`);
+        const statusData = await statusRes.json().catch(() => ({}));
+        if (!statusRes.ok) {
+          setEmbedState((prev) => ({
+            ...prev,
+            isEmbedding: false,
+            message: null,
+            error: statusData.error || "상태 조회에 실패했습니다.",
+          }));
+          return;
+        }
+        const status = statusData.status;
+        if (status === "completed") {
+          const msg = statusData.result?.message || "임베딩 작업이 완료되었습니다.";
+          setEmbedState((prev) => ({
+            ...prev,
+            isEmbedding: false,
+            message: msg,
+            error: null,
+          }));
+          return;
+        }
+        if (status === "failed") {
+          setEmbedState((prev) => ({
+            ...prev,
+            isEmbedding: false,
+            message: null,
+            error: statusData.error || "임베딩 작업이 실패했습니다.",
+          }));
+          return;
+        }
+        attempts += 1;
+      }
+      setEmbedState((prev) => ({
+        ...prev,
+        isEmbedding: false,
+        message: null,
+        error: "상태 조회 시간이 초과되었습니다.",
+      }));
+    } catch (err) {
+      setEmbedState((prev) => ({
+        ...prev,
+        isEmbedding: false,
+        message: null,
+        error: err instanceof Error ? err.message : "임베딩 요청 중 오류가 발생했습니다.",
+      }));
+    }
+  }, [itemType]);
 
   const currentConfig = itemConfigs[itemType];
 
@@ -231,9 +337,9 @@ export default function UploadContent({ itemType, extraActions }: UploadContentP
               accept=".jsonl"
               onChange={handleFileSelect}
               className="file-input"
-              id="file-input"
+              id={`file-input-${itemType}`}
             />
-            <label htmlFor="file-input" className="file-input-label">
+            <label htmlFor={`file-input-${itemType}`} className="file-input-label">
               파일 선택
             </label>
           </div>
@@ -275,6 +381,7 @@ export default function UploadContent({ itemType, extraActions }: UploadContentP
       )}
 
       <button
+        type="button"
         className="upload-button"
         onClick={handleUpload}
         disabled={!uploadState.file || uploadState.isUploading}
@@ -282,7 +389,23 @@ export default function UploadContent({ itemType, extraActions }: UploadContentP
         {uploadState.isUploading ? "업로드 중..." : "업로드"}
       </button>
 
-      {extraActions ? <div className="extra-actions">{extraActions}</div> : null}
+      <button
+        type="button"
+        className="embed-button"
+        onClick={handleEmbed}
+        disabled={embedState.isEmbedding || itemType !== "player"}
+      >
+        {embedState.isEmbedding ? "임베딩 중..." : "임베딩"}
+      </button>
+      {itemType !== "player" && (
+        <p className="embed-hint">임베딩은 선수(Player) 타입에서만 사용할 수 있습니다.</p>
+      )}
+      {embedState.message && (
+        <div className="embed-result success">{embedState.message}</div>
+      )}
+      {embedState.error && (
+        <div className="embed-result error">{embedState.error}</div>
+      )}
 
       <style jsx>{`
         .upload-content {
@@ -515,8 +638,52 @@ export default function UploadContent({ itemType, extraActions }: UploadContentP
           cursor: not-allowed;
         }
 
-        .extra-actions {
+        .embed-button {
+          width: 100%;
+          margin-top: 1rem;
+          padding: 1rem;
+          background: #10b981;
+          color: white;
+          border: none;
+          border-radius: 0.5rem;
+          font-size: 1.2rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .embed-button:hover:not(:disabled) {
+          background: #059669;
+        }
+
+        .embed-button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .embed-hint {
+          margin: 0.5rem 0 0 0;
+          font-size: 0.9rem;
+          color: #64748b;
+        }
+
+        .embed-result {
           margin-top: 0.75rem;
+          padding: 0.75rem 1rem;
+          border-radius: 0.5rem;
+          font-size: 0.95rem;
+        }
+
+        .embed-result.success {
+          background: #f0fdf4;
+          border: 1px solid #86efac;
+          color: #166534;
+        }
+
+        .embed-result.error {
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          color: #dc2626;
         }
 
         @media (max-width: 768px) {

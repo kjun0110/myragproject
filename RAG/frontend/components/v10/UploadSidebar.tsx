@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 type ItemType = "player" | "schedule" | "stadium" | "team";
 
@@ -39,12 +40,7 @@ const itemConfigs: Record<ItemType, ItemConfig> = {
 };
 
 export default function UploadSidebar() {
-  const router = useRouter();
   const pathname = usePathname();
-
-  const handleItemTypeClick = (path: string) => {
-    router.push(path);
-  };
 
   return (
     <aside className="sidebar">
@@ -55,14 +51,15 @@ export default function UploadSidebar() {
           const isActive = pathname === config.path;
 
           return (
-            <button
+            <Link
               key={itemType}
+              href={config.path}
+              prefetch={false}
               className={`sidebar-button ${isActive ? "active" : ""}`}
-              onClick={() => handleItemTypeClick(config.path)}
             >
               <span className="button-icon">{config.icon}</span>
               <span className="button-label">{config.label}</span>
-            </button>
+            </Link>
           );
         })}
       </div>
@@ -102,6 +99,8 @@ export default function UploadSidebar() {
           transition: all 0.2s;
           text-align: left;
           width: 100%;
+          text-decoration: none;
+          color: inherit;
         }
 
         .sidebar-button:hover {

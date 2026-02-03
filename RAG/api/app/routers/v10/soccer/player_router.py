@@ -23,21 +23,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v10/soccer/player", tags=["Player"])
 
 
-@router.get("/embed")
-async def trigger_player_embedding() -> JSONResponse:
-    """Player 임베딩 생성 트리거.
+@router.post("/embed")
+async def enqueue_player_embedding() -> JSONResponse:
+    """Player 임베딩 작업을 큐에 넣고 job_id를 반환합니다.
 
-    현재는 UI에서 "임베딩 실행" 명령을 백엔드로 전달하기 위한 엔드포인트입니다.
-    (실제 임베딩 생성/적재 파이프라인은 추후 `hub/services` 또는 별도 배치로 구현 권장)
+    - 프론트는 이 엔드포인트로 작업을 넣고, /embed/status/{job_id} 로 상태를 폴링합니다.
+    - 큐·워커는 백엔드(Upstash REST)에만 있음.
     """
-    logger.info("[ROUTER] Player 임베딩 트리거 호출")
+    from app.routers.shared.embedding_queue import add_job
+
+    job_id = add_job("player", payload={})
+    logger.info("[ROUTER] Player 임베딩 job 등록 job_id=%s", job_id)
     return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={
-            "success": True,
-            "message": "임베딩 트리거 요청을 수신했습니다. (실제 생성 로직은 추후 구현)",
-        },
+        status_code=status.HTTP_201_CREATED,
+        content={"success": True, "job_id": job_id},
     )
+
+
+@router.get("/embed/status/{job_id}")
+async def get_player_embedding_status(job_id: str) -> JSONResponse:
+    """job_id의 임베딩 작업 상태를 반환합니다."""
+    from app.routers.shared.embedding_queue import get_status
+
+    data = get_status(job_id)
+    if data is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"success": False, "error": "job을 찾을 수 없습니다."},
+        )
+    return JSONResponse(status_code=status.HTTP_200_OK, content=data)
 
 
 @router.post("/upload")

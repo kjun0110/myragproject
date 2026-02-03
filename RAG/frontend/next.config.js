@@ -7,7 +7,7 @@ const withSerwist = require('@serwist/next').default({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  reactStrictMode: true,
+  reactStrictMode: false, // 개발 모드에서 무한 요청 방지 (이중 마운트 비활성화)
   // 워크스페이스 루트 경고 해결: 현재 디렉토리를 루트로 명시
   outputFileTracingRoot: path.join(__dirname),
   env: {
@@ -27,10 +27,7 @@ const nextConfig = {
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     formats: ['image/avif', 'image/webp'],
   },
-  // 반응형 폰트 최적화
-  experimental: {
-    optimizeCss: true,
-  },
+  // optimizeCss: true는 critters 패키지 필요 - 미설치 시 500 에러 발생
 };
 
 module.exports = withSerwist(nextConfig);

@@ -1,0 +1,75 @@
+.uploadContainer {
+  min-height: 100vh;
+  background: #f5f7fa;
+}
+
+.uploadHeader {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 2rem;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.headerContent {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.uploadHeader h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.backButton {
+  padding: 0.75rem 1.5rem;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 0.5rem;
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.backButton:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.uploadMain {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.uploadLayout {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+}
+
+@media (max-width: 1024px) {
+  .uploadLayout {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) {
+  .uploadHeader {
+    padding: 1rem;
+  }
+
+  .uploadHeader h1 {
+    font-size: 1.5rem;
+  }
+
+  .uploadMain {
+    padding: 1rem;
+  }
+}
