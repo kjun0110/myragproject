@@ -16,6 +16,7 @@ HTTP 실행 예시(권장: Streamable HTTP):
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +32,8 @@ MCP_PATH = os.getenv("SOCCER_LLM_MCP_PATH", "/mcp")
 class ExaOneRuntime:
     """ExaOne 모델/토크나이저를 1회 로드해서 공유."""
 
+    _load_lock = threading.Lock()
+
     def __init__(self) -> None:
         self.model: Any = None
         self.tokenizer: Any = None
@@ -38,21 +41,25 @@ class ExaOneRuntime:
     def ensure_loaded(self) -> None:
         if self.model is not None and self.tokenizer is not None:
             return
-        try:
-            logger.info("[LLM MCP] ExaOne 모델 로드 시작...")
-            from app.core.loaders import ModelLoader
+        with ExaOneRuntime._load_lock:
+            # 락 획득 후 다시 확인 (다른 스레드가 로드 완료했을 수 있음)
+            if self.model is not None and self.tokenizer is not None:
+                return
+            try:
+                logger.info("[LLM MCP] ExaOne 모델 로드 시작...")
+                from app.core.loaders import ModelLoader
 
-            self.model, self.tokenizer = ModelLoader.load_exaone_model(
-                adapter_name=None,
-                use_quantization=True,
-                device_map="auto",
-                trust_remote_code=True,
-            )
-            logger.info("[LLM MCP] ExaOne 모델 로드 완료")
-        except Exception as e:
-            logger.exception("[LLM MCP] ExaOne 모델 로드 실패: %s", e)
-            self.model = None
-            self.tokenizer = None
+                self.model, self.tokenizer = ModelLoader.load_exaone_model(
+                    adapter_name=None,
+                    use_quantization=True,
+                    device_map="auto",
+                    trust_remote_code=True,
+                )
+                logger.info("[LLM MCP] ExaOne 모델 로드 완료")
+            except Exception as e:
+                logger.exception("[LLM MCP] ExaOne 모델 로드 실패: %s", e)
+                self.model = None
+                self.tokenizer = None
 
     def generate(self, prompt: str, max_new_tokens: int = 256) -> str:
         """ExaOne 텍스트 생성."""
@@ -226,7 +233,11 @@ mcp = FastMCP("Soccer LLM MCP Server (ExaOne Only)")
 @mcp.tool
 def exaone_generate(prompt: str, max_new_tokens: int = 256) -> str:
     """ExaOne로 텍스트를 생성합니다(LLM 전용 서버)."""
-    return runtime.generate(prompt, max_new_tokens=max_new_tokens)
+    try:
+        return runtime.generate(prompt, max_new_tokens=max_new_tokens)
+    except Exception as e:
+        logger.exception("[LLM MCP] exaone_generate 실패 (엑사원/모델 로드 등): %s", e)
+        return f"[ERROR] {type(e).__name__}: {e}"
 
 
 @mcp.tool
@@ -245,6 +256,29 @@ def llm_server_health() -> str:
 
 # ASGI app (uvicorn으로 실행)
 app = create_streamable_http_app(server=mcp, streamable_http_path=MCP_PATH)
+
+# Startup 로그 (FastMCP lifespan을 건드리지 않고 바로 출력)
+logger.info("=" * 70)
+logger.info("[LLM MCP 9100] ✓ 서버 준비 (ExaOne은 첫 요청 시 로드)")
+logger.info("[LLM MCP 9100] 엔드포인트: http://0.0.0.0:9100%s", MCP_PATH)
+logger.info("=" * 70)
+
+from starlette.responses import JSONResponse
+
+
+async def _llm_json_exception_handler(request: Any, exc: Exception) -> JSONResponse:
+    logger.exception("[LLM MCP] 미처리 예외: %s", exc)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc), "type": type(exc).__name__},
+        media_type="application/json",
+    )
+
+
+app.add_exception_handler(Exception, _llm_json_exception_handler)
+
+
+# ExaOne은 선로드하지 않음. 컨텐츠 생성 등 툴 호출 시 ensure_loaded()로 그때 로드.
 
 
 if __name__ == "__main__":

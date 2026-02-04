@@ -28,11 +28,10 @@ class PlayerOrchestrator:
     """
 
     def __init__(self):
-        # KoELECTRA 모델 로드 (판단용으로 유지)
+        # KoELECTRA는 필요할 때만 로드 (run_embedding_batch 등에서는 로드 안 함)
         self.model = None
         self.tokenizer = None
-        self.device = None
-        self._load_model()
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # PlayerAgent 한 번 생성 (⚠️ LLM은 별도 LLM MCP 서버에서 1회 로드하여 공유)
         from app.domains.v10.soccer.spokes.agents.player_agent import PlayerAgent
@@ -50,6 +49,12 @@ class PlayerOrchestrator:
         """FastMCP 서버를 반환합니다. KoELECTRA·ExaOne 툴이 연결되어 있습니다."""
         return self.mcp
 
+    def _ensure_koelectra_loaded(self) -> None:
+        """KoELECTRA 모델이 필요할 때만 로드합니다 (지연 로드)."""
+        if self.model is not None and self.tokenizer is not None:
+            return
+        self._load_model()
+
     def _koelectra_classify_tool(self, text: str) -> str:
         """[MCP 툴] KoELECTRA로 텍스트가 정책 기반인지 규칙 기반인지 분류합니다.
 
@@ -59,6 +64,7 @@ class PlayerOrchestrator:
         Returns:
             JSON 문자열: {"strategy": "policy"|"rule", "confidence": float}
         """
+        self._ensure_koelectra_loaded()
         if self.model is None or self.tokenizer is None:
             return json.dumps(
                 {"strategy": "rule", "confidence": 0.0, "error": "KoELECTRA 미로드"},
@@ -371,8 +377,9 @@ class PlayerOrchestrator:
         self, records: List[Dict[str, Any]]
     ) -> tuple[str, float]:
         """KoELECTRA를 사용하여 전략을 판단하고 신뢰도도 반환합니다."""
+        self._ensure_koelectra_loaded()
         try:
-            if self.model is None or self.tokenizer is None or self.device is None:
+            if self.model is None or self.tokenizer is None:
                 raise RuntimeError("KoELECTRA 미로드")
 
             # 레코드들을 텍스트로 변환 (샘플 데이터 사용)
@@ -468,6 +475,122 @@ class PlayerOrchestrator:
             }
 
         return result
+
+    @staticmethod
+    def enqueue_embedding_job() -> str:
+        """임베딩 job을 큐에 넣고 job_id를 반환합니다. (라우터 → 오케스트레이터 흐름)"""
+        from app.routers.shared.embedding_queue import add_job
+
+        return add_job("player", payload={})
+
+    def _player_to_dict(self, player: Any) -> Dict[str, Any]:
+        """Player ORM을 MCP 호출용 dict로 변환."""
+        return {
+            "id": player.id,
+            "team_id": getattr(player, "team_id", None),
+            "team_code": getattr(player, "team_code", None),
+            "player_name": getattr(player, "player_name", None),
+            "e_player_name": getattr(player, "e_player_name", None),
+            "nickname": getattr(player, "nickname", None),
+            "join_yyyy": getattr(player, "join_yyyy", None),
+            "position": getattr(player, "position", None),
+            "back_no": getattr(player, "back_no", None),
+            "nation": getattr(player, "nation", None),
+            "birth_date": str(player.birth_date) if getattr(player, "birth_date", None) else None,
+            "solar": getattr(player, "solar", None),
+            "height": getattr(player, "height", None),
+            "weight": getattr(player, "weight", None),
+        }
+
+    async def run_embedding_batch(self) -> Dict[str, Any]:
+        """
+        임베딩 배치 실행: DB 선수 조회 → 50명 단위로 MCP content 생성 → 임베딩·저장.
+
+        흐름: 오케스트레이터 → (soccer_server) → player_server → player_agent(엑사원) content 생성
+             → player_embedding 서비스 → embedding_client 벡터 생성 → players_embeddings 저장
+        """
+        import os
+
+        from fastmcp.client import Client
+
+        from app.core.database.session import AsyncSessionLocal
+        from app.domains.v10.soccer.hub.repositories.player_repository import PlayerRepository
+        from app.domains.v10.soccer.spokes.services.player_embedding import PlayerEmbeddingService
+
+        EMBEDDING_BATCH_SIZE = 50
+
+        logger.info("[ORCHESTRATOR] 임베딩 배치 시작 (배치 크기: %d명)", EMBEDDING_BATCH_SIZE)
+
+        player_mcp_url = os.getenv("SOCCER_PLAYER_SPOKE_MCP_URL", "http://127.0.0.1:9001/mcp")
+        logger.info("[ORCHESTRATOR] 임베딩 MCP URL (Player 9001): %s", player_mcp_url)
+
+        try:
+            async with AsyncSessionLocal() as session:
+                player_repo = PlayerRepository(session)
+                players = await player_repo.get_all()
+                logger.info("[ORCHESTRATOR] DB에서 선수 %d명 조회", len(players))
+
+                if not players:
+                    return {
+                        "success": True,
+                        "message": "처리할 선수가 없습니다.",
+                        "saved_count": 0,
+                        "total": 0,
+                    }
+
+                # 세션 밖에서 사용하기 위해 player 데이터를 dict로 미리 변환
+                player_dicts = [self._player_to_dict(p) for p in players]
+                
+                embedding_svc = PlayerEmbeddingService()
+                total_saved = 0
+                total_count = len(player_dicts)
+
+                for start in range(0, total_count, EMBEDDING_BATCH_SIZE):
+                    chunk = player_dicts[start : start + EMBEDDING_BATCH_SIZE]
+                    batch_num = start // EMBEDDING_BATCH_SIZE + 1
+                    logger.info("[ORCHESTRATOR] 임베딩 배치 %d/%d 처리 중 (%d명)", batch_num, (total_count + EMBEDDING_BATCH_SIZE - 1) // EMBEDDING_BATCH_SIZE, len(chunk))
+
+                    items: List[tuple] = []
+                    mcp_success_logged = False
+                    
+                    # 배치당 1번만 MCP 연결 (50명 처리)
+                    async with Client(player_mcp_url) as c:
+                        for player_dict in chunk:
+                            try:
+                                raw = await c.call_tool(
+                                    "player_generate_embedding_content",
+                                    {"player_data": player_dict},
+                                )
+                                content = raw.data if hasattr(raw, "data") and raw.data is not None else str(raw) if raw else ""
+                                if not content.strip():
+                                    content = f"{player_dict.get('player_name', '')} {player_dict.get('position', '')} {player_dict.get('team_code', '')}".strip()
+                                items.append((player_dict["id"], content))
+                                if not mcp_success_logged:
+                                    logger.info("[ORCHESTRATOR] 배치 %d: MCP(9001) content 생성 정상 (엑사원→벡터 경로)", batch_num)
+                                    mcp_success_logged = True
+                            except Exception as e:
+                                logger.warning("[ORCHESTRATOR] player_id=%s content 생성 실패: %s", player_dict.get("id"), e)
+                                fallback = f"{player_dict.get('player_name', '')} {player_dict.get('position', '')} {player_dict.get('team_code', '')}".strip()
+                                items.append((player_dict["id"], fallback or str(player_dict["id"])))
+
+                    result = await embedding_svc.run_batch_indexing(items, session=session)
+                    total_saved += result.get("saved_count", 0)
+
+                message = f"임베딩 완료: 총 {total_saved}/{total_count}명 저장 (50명 단위 배치)"
+                logger.info("[ORCHESTRATOR] %s", message)
+                return {
+                    "success": True,
+                    "message": message,
+                    "saved_count": total_saved,
+                    "total": total_count,
+                }
+        except Exception as e:
+            # 서버 종료 등으로 DB 연결이 먼저 끊긴 경우 세션 close 시 InterfaceError 발생
+            err_msg = str(e).lower()
+            if "connection is closed" in err_msg or "underlying connection is closed" in err_msg:
+                logger.info("[ORCHESTRATOR] 임베딩 배치 중단 (DB 연결 종료): %s", e)
+                return {"success": False, "message": "interrupted", "saved_count": 0}
+            raise
 
     async def process_question(self, question: str) -> Dict[str, Any]:
         """

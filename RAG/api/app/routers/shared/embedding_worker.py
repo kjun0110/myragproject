@@ -23,6 +23,7 @@ _api_dir = _this_file.parent.parent.parent  # .../api/app/routers/shared -> .../
 if _api_dir.name == "api" and str(_api_dir) not in sys.path:
     sys.path.insert(0, str(_api_dir))
 
+import asyncio
 import time
 
 from app.routers.shared.embedding_queue import (
@@ -43,10 +44,13 @@ logger = logging.getLogger(__name__)
 
 
 def run_player_embedding_batch() -> dict:
-    """선수 임베딩 배치 실행. 실제 생성/적재는 추후 hub/services 등에서 구현."""
-    logger.info("[WORKER] Player 임베딩 배치 실행 (실제 로직은 추후 구현)")
-    # TODO: app.domains.v10.soccer.hub 등에서 임베딩 생성/DB 적재
-    return {"success": True, "message": "임베딩 트리거 처리됨 (실제 생성 로직은 추후 구현)"}
+    """선수 임베딩 배치 실행: 오케스트레이터 → MCP(content) → player_embedding → DB 저장."""
+    from app.domains.v10.soccer.hub.orchestrators.player_orchestrator import PlayerOrchestrator
+
+    logger.info("[WORKER] Player 임베딩 배치 실행")
+    orchestrator = PlayerOrchestrator()
+    result = asyncio.run(orchestrator.run_embedding_batch())
+    return result
 
 
 def process_job(job_id: str, queue_name: QueueName) -> None:

@@ -14,9 +14,17 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from upstash_redis import Redis  # type: ignore
+
+if TYPE_CHECKING:
+    from upstash_redis.asyncio import Redis as AsyncRedis  # type: ignore
+else:
+    try:
+        from upstash_redis.asyncio import Redis as AsyncRedis  # type: ignore
+    except ImportError:
+        AsyncRedis = None  # type: ignore
 
 
 @dataclass(frozen=True)
@@ -26,6 +34,7 @@ class UpstashRedisConfig:
 
 
 _redis: Optional[Redis] = None
+_redis_async: Optional["AsyncRedis"] = None
 
 
 def get_upstash_redis_config() -> UpstashRedisConfig:
@@ -46,6 +55,17 @@ def get_redis() -> Redis:
         cfg = get_upstash_redis_config()
         _redis = Redis(url=cfg.url, token=cfg.token)
     return _redis
+
+
+def get_redis_async() -> "AsyncRedis":
+    """싱글톤 Upstash Redis 비동기 클라이언트 (upstash_redis.asyncio)."""
+    global _redis_async
+    if AsyncRedis is None:
+        raise RuntimeError("upstash_redis.asyncio를 사용할 수 없습니다. upstash-redis 패키지를 확인하세요.")
+    if _redis_async is None:
+        cfg = get_upstash_redis_config()
+        _redis_async = AsyncRedis(url=cfg.url, token=cfg.token)
+    return _redis_async
 
 
 def store_access_token(

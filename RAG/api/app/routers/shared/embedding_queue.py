@@ -13,7 +13,7 @@ import time
 import uuid
 from typing import Any, Dict, Literal, Optional
 
-from app.routers.shared.redis import get_redis
+from app.routers.shared.redis import get_redis, get_redis_async
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +121,100 @@ def pop_pending_job(queue_name: QueueName) -> Optional[str]:
     list_key = _pending_list_key(queue_name)
     # RPOP: list 오른쪽에서 꺼냄 (FIFO)
     job_id = r.rpop(list_key)
+    if job_id is None:
+        return None
+    if isinstance(job_id, bytes):
+        job_id = job_id.decode()
+    return job_id
+
+
+# ---------- 비동기 API (lifespan 백그라운드 worker용) ----------
+
+
+def _norm_val(v: Any) -> str:
+    """Redis 해시 값 bytes/str 정규화."""
+    return v.decode() if isinstance(v, bytes) else (v or "")
+
+
+async def add_job_async(
+    queue_name: QueueName,
+    payload: Optional[Dict[str, Any]] = None,
+) -> str:
+    """큐에 작업을 넣고 job_id를 반환합니다 (비동기)."""
+    job_id = uuid.uuid4().hex
+    now = str(int(time.time()))
+    payload = payload or {}
+    r = get_redis_async()
+    key = _job_hash_key(job_id)
+    await r.hset(
+        key,
+        values={
+            "status": STATUS_PENDING,
+            "created_at": now,
+            "updated_at": now,
+            "payload": json.dumps(payload, ensure_ascii=False),
+        },
+    )
+    await r.expire(key, JOB_TTL_SECONDS)
+    list_key = _pending_list_key(queue_name)
+    await r.lpush(list_key, job_id)
+    logger.info("[EMBED_QUEUE] job 추가 queue=%s job_id=%s", queue_name, job_id)
+    return job_id
+
+
+async def get_status_async(job_id: str) -> Optional[Dict[str, Any]]:
+    """job_id의 상태를 반환합니다 (비동기). 없으면 None."""
+    r = get_redis_async()
+    key = _job_hash_key(job_id)
+    raw = await r.hgetall(key)
+    if not raw:
+        return None
+    status = _norm_val(raw.get("status", ""))
+    created_at = _norm_val(raw.get("created_at", ""))
+    updated_at = _norm_val(raw.get("updated_at", ""))
+    result = _norm_val(raw.get("result", ""))
+    error = _norm_val(raw.get("error", ""))
+    out: Dict[str, Any] = {
+        "job_id": job_id,
+        "status": status,
+        "created_at": created_at,
+        "updated_at": updated_at,
+    }
+    if result:
+        try:
+            out["result"] = json.loads(result)
+        except Exception:
+            out["result"] = result
+    if error:
+        out["error"] = error
+    return out
+
+
+async def update_status_async(
+    job_id: str,
+    status: str,
+    result: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+) -> None:
+    """작업 상태를 갱신합니다 (비동기)."""
+    r = get_redis_async()
+    key = _job_hash_key(job_id)
+    now = str(int(time.time()))
+    mapping: Dict[str, str] = {"status": status, "updated_at": now}
+    if result is not None:
+        mapping["result"] = json.dumps(result, ensure_ascii=False)
+    if error is not None:
+        mapping["error"] = error
+    await r.hset(key, values=mapping)
+    await r.expire(key, JOB_TTL_SECONDS)
+    logger.info("[EMBED_QUEUE] job 상태 갱신 job_id=%s status=%s", job_id, status)
+
+
+async def pop_pending_job_async(queue_name: QueueName) -> Optional[str]:
+    """대기 목록에서 job_id 하나를 꺼냅니다 (비동기). 없으면 None."""
+    r = get_redis_async()
+    list_key = _pending_list_key(queue_name)
+    job_id = await r.rpop(list_key)
     if job_id is None:
         return None
     if isinstance(job_id, bytes):

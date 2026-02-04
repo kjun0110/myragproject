@@ -49,12 +49,22 @@ def create_database_engine():
         "echo": debug_mode,
         "future": True,
         "pool_pre_ping": True,
+        "pool_size": 20,  # connection pool 크기 증가
+        "max_overflow": 40,  # 추가 연결 허용
+        "pool_recycle": 3600,  # 1시간마다 연결 재생성
+        "pool_timeout": 60,  # 연결 대기 타임아웃 60초
     }
 
     # PostgreSQL의 경우 SSL 설정 추가 (Neon DB는 SSL 필수)
     if "postgresql" in clean_url and "sqlite" not in clean_url:
         engine_kwargs["connect_args"] = {
             "ssl": True,  # asyncpg는 ssl=True로 SSL 연결
+            "command_timeout": 600,  # SQL 명령 타임아웃 600초 (10분)
+            "timeout": 600,  # 연결 타임아웃 600초
+            "server_settings": {
+                "statement_timeout": "0",  # PostgreSQL statement timeout 무제한 (임베딩 모델 로딩 대응)
+                "idle_in_transaction_session_timeout": "0",  # 트랜잭션 내 idle timeout 무제한
+            },
         }
 
     # SQLite의 경우 특별 설정 (테스트 환경)

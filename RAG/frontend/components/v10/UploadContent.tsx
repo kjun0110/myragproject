@@ -211,11 +211,9 @@ export default function UploadContent({ itemType }: UploadContentProps) {
 
   const handleEmbed = useCallback(async () => {
     if (itemType !== "player") return;
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-    const baseUrl = `${backendUrl.replace(/\/$/, "")}/api/v10/soccer/player`;
     setEmbedState((prev) => ({ ...prev, isEmbedding: true, message: null, error: null }));
     try {
-      const createRes = await fetch(`${baseUrl}/embed`, { method: "POST" });
+      const createRes = await fetch("/v10/api/player/embed", { method: "POST" });
       const createData = await createRes.json().catch(() => ({}));
       if (!createRes.ok) {
         setEmbedState((prev) => ({
@@ -236,12 +234,13 @@ export default function UploadContent({ itemType }: UploadContentProps) {
         }));
         return;
       }
+      // 50명 단위 배치로 처리하므로 전체 완료까지 시간이 걸릴 수 있음 (최대 약 20분 대기)
       const pollInterval = 2000;
-      const maxAttempts = 120;
+      const maxAttempts = 600;
       let attempts = 0;
       while (attempts < maxAttempts) {
         await new Promise((r) => setTimeout(r, pollInterval));
-        const statusRes = await fetch(`${baseUrl}/embed/status/${jobId}`);
+        const statusRes = await fetch(`/v10/api/player/embed/status/${jobId}`);
         const statusData = await statusRes.json().catch(() => ({}));
         if (!statusRes.ok) {
           setEmbedState((prev) => ({
@@ -278,7 +277,7 @@ export default function UploadContent({ itemType }: UploadContentProps) {
         ...prev,
         isEmbedding: false,
         message: null,
-        error: "상태 조회 시간이 초과되었습니다.",
+        error: "상태 조회 시간이 초과되었습니다. (최대 20분 대기) 백엔드에서 작업이 계속 진행 중일 수 있으니 잠시 후 페이지를 새로고침해 보세요.",
       }));
     } catch (err) {
       setEmbedState((prev) => ({
