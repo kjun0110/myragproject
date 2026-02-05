@@ -544,6 +544,7 @@ class PlayerOrchestrator:
                 embedding_svc = PlayerEmbeddingService()
                 total_saved = 0
                 total_count = len(player_dicts)
+                all_failed: List[Dict[str, Any]] = []
 
                 for start in range(0, total_count, EMBEDDING_BATCH_SIZE):
                     chunk = player_dicts[start : start + EMBEDDING_BATCH_SIZE]
@@ -575,14 +576,39 @@ class PlayerOrchestrator:
 
                     result = await embedding_svc.run_batch_indexing(items, session=session)
                     total_saved += result.get("saved_count", 0)
+                    errors = result.get("errors") or []
+                    for err in errors:
+                        logger.warning(
+                            "[ORCHESTRATOR] 임베딩 DB 저장 실패 player_id=%s: %s",
+                            err.get("player_id"),
+                            err.get("error"),
+                        )
+                    if errors:
+                        failed_ids = [e.get("player_id") for e in errors]
+                        all_failed.extend(errors)
+                        logger.info(
+                            "[ORCHESTRATOR] 이번 배치에서 저장 실패 %d명 (player_id=%s). 위 WARNING 로그에 상세 오류 있음.",
+                            len(errors),
+                            failed_ids,
+                        )
 
                 message = f"임베딩 완료: 총 {total_saved}/{total_count}명 저장 (50명 단위 배치)"
+                if all_failed:
+                    failed_ids_str = ", ".join(str(e.get("player_id")) for e in all_failed)
+                    message += f" 저장 실패: player_id=[{failed_ids_str}]"
                 logger.info("[ORCHESTRATOR] %s", message)
+                if total_saved < total_count:
+                    logger.info(
+                        "[ORCHESTRATOR] 누락 %d명 — player_id=%s. 상세 오류는 위 WARNING '[ORCHESTRATOR] 임베딩 DB 저장 실패' 로그 참조.",
+                        total_count - total_saved,
+                        [e.get("player_id") for e in all_failed],
+                    )
                 return {
                     "success": True,
                     "message": message,
                     "saved_count": total_saved,
                     "total": total_count,
+                    "failed_player_ids": [e.get("player_id") for e in all_failed] if all_failed else None,
                 }
         except Exception as e:
             # 서버 종료 등으로 DB 연결이 먼저 끊긴 경우 세션 close 시 InterfaceError 발생

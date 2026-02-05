@@ -78,25 +78,20 @@ async def player_exaone_generate_with_fs_tools(prompt: str, max_steps: int = 5) 
 async def player_generate_embedding_content(player_data: Dict[str, Any]) -> str:
     """엑사원을 사용하여 선수 정보를 RAG 검색용 content로 생성합니다.
 
+    스키마 기반 템플릿(PK/FK 제외, DB 필드만, 한국어·길이 제한)으로 프롬프트를 만들고
+    ExaOne이 한 문장 요약을 생성합니다.
+
     Args:
         player_data: 선수 정보 딕셔너리 (player_name, position, team_code 등)
 
     Returns:
         엑사원이 생성한 검색용 content 문장
     """
+    from app.domains.v10.shared.models.bases.embedding_content_template import get_embedding_prompt
+    from app.domains.v10.soccer.models.bases.players import Player
+
     logger.info("[Player MCP] player_generate_embedding_content 호출됨")
-    parts = []
-    for k, v in (player_data or {}).items():
-        if v is not None and str(v).strip():
-            parts.append(f"{k}: {v}")
-    raw = " | ".join(parts) if parts else str(player_data)
-    prompt = f"""다음 축구 선수 정보를 RAG 검색에 적합한 한 문장으로 요약하세요.
-검색 시 의미를 담은 자연어 문장으로 작성해주세요.
-
-선수 정보:
-{raw}
-
-요약 문장:"""
+    prompt = get_embedding_prompt(Player, player_data or {})
     return await player_exaone_generate(prompt, max_new_tokens=256)
 
 
