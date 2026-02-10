@@ -483,135 +483,20 @@ class PlayerOrchestrator:
 
         return add_job("player", payload={})
 
-    def _player_to_dict(self, player: Any) -> Dict[str, Any]:
-        """Player ORM을 MCP 호출용 dict로 변환."""
-        return {
-            "id": player.id,
-            "team_id": getattr(player, "team_id", None),
-            "team_code": getattr(player, "team_code", None),
-            "player_name": getattr(player, "player_name", None),
-            "e_player_name": getattr(player, "e_player_name", None),
-            "nickname": getattr(player, "nickname", None),
-            "join_yyyy": getattr(player, "join_yyyy", None),
-            "position": getattr(player, "position", None),
-            "back_no": getattr(player, "back_no", None),
-            "nation": getattr(player, "nation", None),
-            "birth_date": str(player.birth_date) if getattr(player, "birth_date", None) else None,
-            "solar": getattr(player, "solar", None),
-            "height": getattr(player, "height", None),
-            "weight": getattr(player, "weight", None),
-        }
-
     async def run_embedding_batch(self) -> Dict[str, Any]:
         """
-        임베딩 배치 실행: DB 선수 조회 → 50명 단위로 MCP content 생성 → 임베딩·저장.
-
-        흐름: 오케스트레이터 → (soccer_server) → player_server → player_agent(엑사원) content 생성
-             → player_embedding 서비스 → embedding_client 벡터 생성 → players_embeddings 저장
+        임베딩 배치 실행. 세션 확보 후 PlayerEmbeddingService.run_full_embedding_batch 위임.
         """
-        import os
-
-        from fastmcp.client import Client
-
         from app.core.database.session import AsyncSessionLocal
-        from app.domains.v10.soccer.hub.repositories.player_repository import PlayerRepository
         from app.domains.v10.soccer.spokes.services.player_embedding import PlayerEmbeddingService
 
-        EMBEDDING_BATCH_SIZE = 50
-
-        logger.info("[ORCHESTRATOR] 임베딩 배치 시작 (배치 크기: %d명)", EMBEDDING_BATCH_SIZE)
-
-        player_mcp_url = os.getenv("SOCCER_PLAYER_SPOKE_MCP_URL", "http://127.0.0.1:9001/mcp")
-        logger.info("[ORCHESTRATOR] 임베딩 MCP URL (Player 9001): %s", player_mcp_url)
+        logger.info("[ORCHESTRATOR] 임베딩 배치 시작 (서비스 위임)")
 
         try:
             async with AsyncSessionLocal() as session:
-                player_repo = PlayerRepository(session)
-                players = await player_repo.get_all()
-                logger.info("[ORCHESTRATOR] DB에서 선수 %d명 조회", len(players))
-
-                if not players:
-                    return {
-                        "success": True,
-                        "message": "처리할 선수가 없습니다.",
-                        "saved_count": 0,
-                        "total": 0,
-                    }
-
-                # 세션 밖에서 사용하기 위해 player 데이터를 dict로 미리 변환
-                player_dicts = [self._player_to_dict(p) for p in players]
-                
                 embedding_svc = PlayerEmbeddingService()
-                total_saved = 0
-                total_count = len(player_dicts)
-                all_failed: List[Dict[str, Any]] = []
-
-                for start in range(0, total_count, EMBEDDING_BATCH_SIZE):
-                    chunk = player_dicts[start : start + EMBEDDING_BATCH_SIZE]
-                    batch_num = start // EMBEDDING_BATCH_SIZE + 1
-                    logger.info("[ORCHESTRATOR] 임베딩 배치 %d/%d 처리 중 (%d명)", batch_num, (total_count + EMBEDDING_BATCH_SIZE - 1) // EMBEDDING_BATCH_SIZE, len(chunk))
-
-                    items: List[tuple] = []
-                    mcp_success_logged = False
-                    
-                    # 배치당 1번만 MCP 연결 (50명 처리)
-                    async with Client(player_mcp_url) as c:
-                        for player_dict in chunk:
-                            try:
-                                raw = await c.call_tool(
-                                    "player_generate_embedding_content",
-                                    {"player_data": player_dict},
-                                )
-                                content = raw.data if hasattr(raw, "data") and raw.data is not None else str(raw) if raw else ""
-                                if not content.strip():
-                                    content = f"{player_dict.get('player_name', '')} {player_dict.get('position', '')} {player_dict.get('team_code', '')}".strip()
-                                items.append((player_dict["id"], content))
-                                if not mcp_success_logged:
-                                    logger.info("[ORCHESTRATOR] 배치 %d: MCP(9001) content 생성 정상 (엑사원→벡터 경로)", batch_num)
-                                    mcp_success_logged = True
-                            except Exception as e:
-                                logger.warning("[ORCHESTRATOR] player_id=%s content 생성 실패: %s", player_dict.get("id"), e)
-                                fallback = f"{player_dict.get('player_name', '')} {player_dict.get('position', '')} {player_dict.get('team_code', '')}".strip()
-                                items.append((player_dict["id"], fallback or str(player_dict["id"])))
-
-                    result = await embedding_svc.run_batch_indexing(items, session=session)
-                    total_saved += result.get("saved_count", 0)
-                    errors = result.get("errors") or []
-                    for err in errors:
-                        logger.warning(
-                            "[ORCHESTRATOR] 임베딩 DB 저장 실패 player_id=%s: %s",
-                            err.get("player_id"),
-                            err.get("error"),
-                        )
-                    if errors:
-                        failed_ids = [e.get("player_id") for e in errors]
-                        all_failed.extend(errors)
-                        logger.info(
-                            "[ORCHESTRATOR] 이번 배치에서 저장 실패 %d명 (player_id=%s). 위 WARNING 로그에 상세 오류 있음.",
-                            len(errors),
-                            failed_ids,
-                        )
-
-                message = f"임베딩 완료: 총 {total_saved}/{total_count}명 저장 (50명 단위 배치)"
-                if all_failed:
-                    failed_ids_str = ", ".join(str(e.get("player_id")) for e in all_failed)
-                    message += f" 저장 실패: player_id=[{failed_ids_str}]"
-                logger.info("[ORCHESTRATOR] %s", message)
-                if total_saved < total_count:
-                    logger.info(
-                        "[ORCHESTRATOR] 누락 %d명 — player_id=%s. 상세 오류는 위 WARNING '[ORCHESTRATOR] 임베딩 DB 저장 실패' 로그 참조.",
-                        total_count - total_saved,
-                        [e.get("player_id") for e in all_failed],
-                    )
-                return {
-                    "success": True,
-                    "message": message,
-                    "saved_count": total_saved,
-                    "total": total_count,
-                    "failed_player_ids": [e.get("player_id") for e in all_failed] if all_failed else None,
-                }
+                return await embedding_svc.run_full_embedding_batch(session=session)
         except Exception as e:
-            # 서버 종료 등으로 DB 연결이 먼저 끊긴 경우 세션 close 시 InterfaceError 발생
             err_msg = str(e).lower()
             if "connection is closed" in err_msg or "underlying connection is closed" in err_msg:
                 logger.info("[ORCHESTRATOR] 임베딩 배치 중단 (DB 연결 종료): %s", e)

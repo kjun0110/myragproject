@@ -13,9 +13,9 @@ from app.domains.v10.shared.models.states.base_state import BaseProcessingState
 
 
 class PlayerEmbeddingRecord(TypedDict):
-    """`PlayerEmbedding`(players_embeddings) 1행에 대응하는 상태용 레코드.
+    """임베딩 1건에 대응하는 상태용 레코드 (레거시 호환).
 
-    ORM(`models/bases/player_embeddings.py`)의 컬럼을 상태에서 다루기 쉽게 TypedDict로 정의합니다.
+    이전 players_embeddings 테이블 형식. 현재는 players.embedding 컬럼을 사용합니다.
     """
 
     id: int

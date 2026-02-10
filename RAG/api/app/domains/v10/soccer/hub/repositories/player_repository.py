@@ -141,6 +141,65 @@ class PlayerRepository:
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def update_embedding(
+        self,
+        player_id: int,
+        embedding: List[float],
+        embedding_content: Optional[str] = None,
+    ) -> Player:
+        """
+        Player의 embedding(및 임시 embedding_content) 컬럼을 업데이트합니다.
+
+        Args:
+            player_id: Player ID
+            embedding: 768차원 임베딩 벡터
+            embedding_content: 임베딩에 사용한 원문 (임시, 선택)
+
+        Returns:
+            업데이트된 Player 인스턴스
+
+        Raises:
+            ValueError: Player를 찾을 수 없는 경우
+        """
+        player = await self.get_by_id(player_id)
+        if not player:
+            raise ValueError(f"Player not found: {player_id}")
+
+        player.embedding = embedding
+        if embedding_content is not None:
+            player.embedding_content = embedding_content
+        await self.session.flush()
+
+        logger.debug(f"[REPOSITORY] Player 임베딩 업데이트: id={player_id}")
+        return player
+
+    async def search_by_embedding(
+        self,
+        query_vector: List[float],
+        limit: int = 10,
+    ) -> List[Player]:
+        """
+        임베딩 벡터로 유사한 선수를 검색합니다 (HNSW 인덱스 사용).
+
+        Args:
+            query_vector: 검색 쿼리 벡터 (768차원)
+            limit: 반환할 최대 개수
+
+        Returns:
+            유사도 순으로 정렬된 Player 리스트
+        """
+        result = await self.session.execute(
+            select(Player)
+            .filter(Player.embedding.isnot(None))  # NULL 제외
+            .order_by(Player.embedding.cosine_distance(query_vector))
+            .limit(limit)
+        )
+
+        players = list(result.scalars().all())
+
+        logger.info(f"[REPOSITORY] 벡터 검색 완료: {len(players)}개 결과")
+        return players
+
     async def commit(self):
         """변경사항을 커밋합니다."""
         try:

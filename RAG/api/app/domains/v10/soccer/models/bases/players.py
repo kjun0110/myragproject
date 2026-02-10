@@ -4,8 +4,8 @@
 ERD 기반 SQLAlchemy 모델 정의.
 """
 
-from sqlalchemy import Column, String, Integer, Date, BigInteger, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, Integer, Date, BigInteger, ForeignKey, Text
+from pgvector.sqlalchemy import Vector
 
 from app.domains.v10.shared.models.bases.base import Base
 
@@ -31,6 +31,8 @@ class Player(Base):
         solar: 양력/음력 구분
         height: 키 (cm)
         weight: 몸무게 (kg)
+        embedding: 벡터 임베딩 (768차원, HNSW 인덱스)
+        embedding_content: 임베딩에 사용한 원문 (임시, 디버깅/확인용)
     """
 
 
@@ -66,6 +68,7 @@ class Player(Base):
     height = Column(Integer, nullable=True)  # 키 (cm)
     weight = Column(Integer, nullable=True)  # 몸무게 (kg)
     
-    # Relationships
-    embeddings = relationship("PlayerEmbedding", back_populates="player", cascade="all, delete-orphan")
+    # 벡터 임베딩 (HNSW 인덱스 대상)
+    embedding = Column(Vector(768), nullable=True)  # 선수 정보 벡터 임베딩
+    embedding_content = Column(Text, nullable=True)  # 임베딩에 사용한 원문 (임시)
 

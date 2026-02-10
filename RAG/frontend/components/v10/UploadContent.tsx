@@ -110,102 +110,58 @@ export default function UploadContent({ itemType }: UploadContentProps) {
     []
   );
 
-  const handleUpload = useCallback(async () => {
-    if (!uploadState.file) {
-      setUploadState((prev) => ({
-        ...prev,
-        error: "파일을 선택해주세요.",
-      }));
-      return;
-    }
+  // job_id로 임베딩 상태 폴링 (5초 간격). 업로드 후 자동 발동 또는 "임베딩" 버튼 클릭 시 사용
+  const POLL_INTERVAL_MS = 5000;
+  const MAX_POLL_ATTEMPTS = 240; // 5초 × 240 ≈ 20분
 
-    setUploadState((prev) => ({
+  const pollEmbeddingStatus = useCallback(async (jobId: string) => {
+    setEmbedState((prev) => ({
       ...prev,
-      isUploading: true,
+      isEmbedding: true,
+      message: "임베딩을 시작했습니다. 완료될 때까지 잠시 기다려주세요.",
       error: null,
-      uploadResult: null,
     }));
-
-    try {
-      const formData = new FormData();
-      formData.append("file", uploadState.file);
-
-      // Next.js API Route 사용
-      let apiEndpoint = "";
-      if (itemType === "player") {
-        apiEndpoint = "/v10/api/player/upload";
-      } else if (itemType === "schedule") {
-        apiEndpoint = "/v10/api/schedule/upload";
-      } else if (itemType === "stadium") {
-        apiEndpoint = "/v10/api/stadium/upload";
-      } else if (itemType === "team") {
-        apiEndpoint = "/v10/api/team/upload";
-      } else {
-        throw new Error(`지원하지 않는 아이템 타입: ${itemType}`);
-      }
-
-      // 타임아웃 30초 (백엔드 미실행 시 무한 대기 방지)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30_000);
-
-      let response: Response;
-      try {
-        response = await fetch(apiEndpoint, {
-          method: "POST",
-          body: formData,
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeoutId);
-      }
-
-      const result = await response.json();
-
-      if (response.ok) {
-        setUploadState((prev) => ({
+    let attempts = 0;
+    while (attempts < MAX_POLL_ATTEMPTS) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      const statusRes = await fetch(`/v10/api/player/embed/status/${jobId}`);
+      const statusData = await statusRes.json().catch(() => ({}));
+      if (!statusRes.ok) {
+        setEmbedState((prev) => ({
           ...prev,
-          isUploading: false,
-          uploadResult: {
-            success: true,
-            message: result.message,
-            savedCount: result.saved_count || result.displayed_records,
-            totalRecords: result.total_records,
-            displayedRecords: result.displayed_records,
-            data: result.data,
-          },
+          isEmbedding: false,
+          message: null,
+          error: statusData.error || "상태 조회에 실패했습니다.",
         }));
-        
-        // 첫 5개 행 데이터가 있으면 콘솔에 출력
-        if (result.data && Array.isArray(result.data)) {
-          console.log("첫 5개 행 데이터:", result.data);
-        }
-      } else {
-        setUploadState((prev) => ({
-          ...prev,
-          isUploading: false,
-          error: result.detail || "업로드 실패",
-        }));
+        return;
       }
-    } catch (error) {
-      const isAbort = error instanceof Error && error.name === "AbortError";
-      setUploadState((prev) => ({
-        ...prev,
-        isUploading: false,
-        error: isAbort
-          ? "요청 시간이 초과되었습니다. 백엔드 서버(port 8000)가 실행 중인지 확인해주세요."
-          : error instanceof Error
-            ? error.message
-            : "업로드 중 오류가 발생했습니다.",
-      }));
+      const status = statusData.status;
+      if (status === "completed") {
+        const msg = statusData.result?.message || "임베딩 작업이 완료되었습니다.";
+        setEmbedState((prev) => ({
+          ...prev,
+          isEmbedding: false,
+          message: msg,
+          error: null,
+        }));
+        return;
+      }
+      if (status === "failed") {
+        setEmbedState((prev) => ({
+          ...prev,
+          isEmbedding: false,
+          message: null,
+          error: statusData.error || "임베딩 작업이 실패했습니다.",
+        }));
+        return;
+      }
+      attempts += 1;
     }
-  }, [uploadState.file, itemType]);
-
-  const handleRemoveFile = useCallback(() => {
-    setUploadState((prev) => ({
+    setEmbedState((prev) => ({
       ...prev,
-      file: null,
-      error: null,
-      uploadResult: null,
+      isEmbedding: false,
+      message: null,
+      error: "상태 조회 시간이 초과되었습니다. (최대 20분 대기) 백엔드에서 작업이 계속 진행 중일 수 있으니 잠시 후 페이지를 새로고침해 보세요.",
     }));
   }, []);
 
@@ -234,51 +190,7 @@ export default function UploadContent({ itemType }: UploadContentProps) {
         }));
         return;
       }
-      // 50명 단위 배치로 처리하므로 전체 완료까지 시간이 걸릴 수 있음 (최대 약 20분 대기)
-      const pollInterval = 2000;
-      const maxAttempts = 600;
-      let attempts = 0;
-      while (attempts < maxAttempts) {
-        await new Promise((r) => setTimeout(r, pollInterval));
-        const statusRes = await fetch(`/v10/api/player/embed/status/${jobId}`);
-        const statusData = await statusRes.json().catch(() => ({}));
-        if (!statusRes.ok) {
-          setEmbedState((prev) => ({
-            ...prev,
-            isEmbedding: false,
-            message: null,
-            error: statusData.error || "상태 조회에 실패했습니다.",
-          }));
-          return;
-        }
-        const status = statusData.status;
-        if (status === "completed") {
-          const msg = statusData.result?.message || "임베딩 작업이 완료되었습니다.";
-          setEmbedState((prev) => ({
-            ...prev,
-            isEmbedding: false,
-            message: msg,
-            error: null,
-          }));
-          return;
-        }
-        if (status === "failed") {
-          setEmbedState((prev) => ({
-            ...prev,
-            isEmbedding: false,
-            message: null,
-            error: statusData.error || "임베딩 작업이 실패했습니다.",
-          }));
-          return;
-        }
-        attempts += 1;
-      }
-      setEmbedState((prev) => ({
-        ...prev,
-        isEmbedding: false,
-        message: null,
-        error: "상태 조회 시간이 초과되었습니다. (최대 20분 대기) 백엔드에서 작업이 계속 진행 중일 수 있으니 잠시 후 페이지를 새로고침해 보세요.",
-      }));
+      await pollEmbeddingStatus(jobId);
     } catch (err) {
       setEmbedState((prev) => ({
         ...prev,
@@ -287,7 +199,119 @@ export default function UploadContent({ itemType }: UploadContentProps) {
         error: err instanceof Error ? err.message : "임베딩 요청 중 오류가 발생했습니다.",
       }));
     }
-  }, [itemType]);
+  }, [itemType, pollEmbeddingStatus]);
+
+  const handleUpload = useCallback(async () => {
+    if (!uploadState.file) {
+      setUploadState((prev) => ({
+        ...prev,
+        error: "파일을 선택해주세요.",
+      }));
+      return;
+    }
+
+    setUploadState((prev) => ({
+      ...prev,
+      isUploading: true,
+      error: null,
+      uploadResult: null,
+    }));
+
+    // 타임아웃 120초 (대용량 업로드·백엔드 처리 시간 고려)
+    const uploadTimeoutMs = 120_000;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadState.file);
+
+      // Next.js API Route 사용
+      let apiEndpoint = "";
+      if (itemType === "player") {
+        apiEndpoint = "/v10/api/player/upload";
+      } else if (itemType === "schedule") {
+        apiEndpoint = "/v10/api/schedule/upload";
+      } else if (itemType === "stadium") {
+        apiEndpoint = "/v10/api/stadium/upload";
+      } else if (itemType === "team") {
+        apiEndpoint = "/v10/api/team/upload";
+      } else {
+        throw new Error(`지원하지 않는 아이템 타입: ${itemType}`);
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), uploadTimeoutMs);
+
+      let response: Response;
+      try {
+        response = await fetch(apiEndpoint, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+
+      const result = await response.json();
+
+      if (response.ok) {
+        setUploadState((prev) => ({
+          ...prev,
+          isUploading: false,
+          uploadResult: {
+            success: true,
+            message: result.message,
+            savedCount: result.saved_count || result.displayed_records,
+            totalRecords: result.total_records,
+            displayedRecords: result.displayed_records,
+            data: result.data,
+          },
+        }));
+
+        // Player 업로드이고 job_id가 있으면 임베딩 상태 폴링 자동 발동 (5초 간격)
+        if (itemType === "player" && result.job_id) {
+          setEmbedState((prev) => ({
+            ...prev,
+            isEmbedding: true,
+            message: "임베딩을 시작했습니다. 완료될 때까지 잠시 기다려주세요.",
+            error: null,
+          }));
+          pollEmbeddingStatus(result.job_id);
+        }
+
+        // 첫 5개 행 데이터가 있으면 콘솔에 출력
+        if (result.data && Array.isArray(result.data)) {
+          console.log("첫 5개 행 데이터:", result.data);
+        }
+      } else {
+        setUploadState((prev) => ({
+          ...prev,
+          isUploading: false,
+          error: result.detail || "업로드 실패",
+        }));
+      }
+    } catch (error) {
+      const isAbort = error instanceof Error && error.name === "AbortError";
+      setUploadState((prev) => ({
+        ...prev,
+        isUploading: false,
+        error: isAbort
+          ? `요청 시간이 초과되었습니다 (${uploadTimeoutMs / 1000}초). 대용량 파일이면 시간이 더 걸릴 수 있습니다. 백엔드(port 8000) 실행 여부를 확인한 뒤 다시 시도해주세요.`
+          : error instanceof Error
+            ? error.message
+            : "업로드 중 오류가 발생했습니다.",
+      }));
+    }
+  }, [uploadState.file, itemType, pollEmbeddingStatus]);
+
+  const handleRemoveFile = useCallback(() => {
+    setUploadState((prev) => ({
+      ...prev,
+      file: null,
+      error: null,
+      uploadResult: null,
+    }));
+  }, []);
 
   const currentConfig = itemConfigs[itemType];
 
@@ -400,7 +424,16 @@ export default function UploadContent({ itemType }: UploadContentProps) {
         <p className="embed-hint">임베딩은 선수(Player) 타입에서만 사용할 수 있습니다.</p>
       )}
       {embedState.message && (
-        <div className="embed-result success">{embedState.message}</div>
+        <div
+          className={`result-message embed-completion-banner ${
+            embedState.isEmbedding ? "info" : "success"
+          }`}
+        >
+          <p className="embed-completion-title">
+            {embedState.isEmbedding ? "임베딩 시작" : "임베딩 완료"}
+          </p>
+          <p>{embedState.message}</p>
+        </div>
       )}
       {embedState.error && (
         <div className="embed-result error">{embedState.error}</div>
@@ -577,10 +610,25 @@ export default function UploadContent({ itemType }: UploadContentProps) {
           color: #166534;
         }
 
+        .result-message.info {
+          background: #eff6ff;
+          border: 1px solid #93c5fd;
+          color: #1e40af;
+        }
+
         .result-message.error {
           background: #fef2f2;
           border: 1px solid #fecaca;
           color: #dc2626;
+        }
+
+        .embed-completion-banner {
+          margin-top: 1rem;
+        }
+
+        .embed-completion-title {
+          font-weight: 700;
+          margin-bottom: 0.25rem;
         }
 
         .result-details {

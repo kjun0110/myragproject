@@ -8,7 +8,6 @@ from .stadiums import Stadium
 from .teams import Team
 from .schedules import Schedule
 from .players import Player
-from .player_embeddings import PlayerEmbedding
 from .team_embeddings import TeamEmbedding
 from .stadium_embeddings import StadiumEmbedding
 from .schedule_embeddings import ScheduleEmbedding
@@ -19,7 +18,6 @@ __all__ = [
     "Team",
     "Schedule",
     "Player",
-    "PlayerEmbedding",
     "TeamEmbedding",
     "StadiumEmbedding",
     "ScheduleEmbedding"

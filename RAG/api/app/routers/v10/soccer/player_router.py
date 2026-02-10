@@ -59,16 +59,18 @@ async def get_player_embedding_status(job_id: str) -> JSONResponse:
 
 @router.post("/upload")
 async def upload_player_jsonl(
+    request: Request,
     file: UploadFile = File(...),
 ):
     """
-    Player JSONL 파일을 업로드하여 첫 5개 행을 출력합니다.
+    Player JSONL 파일을 업로드하고, 성공 시 임베딩 job을 자동으로 큐에 넣습니다.
     
     Args:
+        request: FastAPI Request (임베딩 워커 트리거용)
         file: 업로드할 JSONL 파일
     
     Returns:
-        첫 5개 행의 데이터
+        업로드 결과 + job_id (임베딩 배치가 큐에 등록된 경우)
     """
     logger.info("[ROUTER] Player 업로드 라우터 도달")
     logger.info(f"[ROUTER] 파일명: {file.filename}")
@@ -125,10 +127,27 @@ async def upload_player_jsonl(
         result = await orchestrator.process(records)
         
         logger.info(f"[ROUTER] Player 파일 업로드 및 처리 완료: 총 {len(records)}개 레코드")
-        
+
+        # 업로드 성공 시 임베딩 job 자동 등록 (MQ)
+        job_id = None
+        try:
+            from app.routers.shared.embedding_queue import add_job_async
+            job_id = await add_job_async("player", payload={})
+            logger.info("[ROUTER] Player 임베딩 job 자동 등록 job_id=%s", job_id)
+            trigger = getattr(request.app.state, "_embedding_worker_trigger", None)
+            if trigger:
+                trigger(request.app)
+        except Exception as e:
+            logger.warning("[ROUTER] 임베딩 job 등록 실패 (업로드는 완료됨): %s", e)
+
+        response_content = dict(result) if isinstance(result, dict) else {"result": result}
+        if job_id is not None:
+            response_content["job_id"] = job_id
+            response_content["message_embedding"] = "임베딩 배치가 큐에 등록되었습니다. 워커가 처리합니다."
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
-            content=result,
+            content=response_content,
         )
     
     except HTTPException:
